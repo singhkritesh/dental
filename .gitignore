@@ -1,0 +1,21 @@
+.env
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.tmp
+.run/
+logs/
+frontend/node_modules/
+frontend/dist/
+
+# Runtime/system artifacts
+.DS_Store
+.git/index.lock
+.git/HEAD.lock
+
+# Local runtime data (commit only payer reference sources)
+data/*
+!data/payer_references/
+!data/payer_references/*.txt

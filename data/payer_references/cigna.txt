@@ -1,0 +1,11 @@
+Payer: Cigna Dental
+Plan Snapshot (sample reference):
+- Preventive services: covered at 100%
+- Basic services: covered at 70%
+- Major services: covered at 50%
+- Orthodontics: not covered in this sample plan
+- Annual maximum: $1,250
+- Waiting periods: 6 months for basic, 12 months for major
+- Prior authorization: required for selected oral surgery and high-cost prosthodontics
+- Exclusions/limitations: cosmetic veneers not covered, implants limited by plan rider
+

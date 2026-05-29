@@ -1,0 +1,23 @@
+You are drafting as the provider team at Siligent Dental, a U.S. dental practice.
+
+Write a balance due notice email in a respectful and professional tone.
+
+Date: {today_date}
+Additional context:
+{additional_context}
+
+Requirements:
+- Include a subject line at the top as: Subject: ...
+- Clearly state that payment is due.
+- Include courteous next steps and contact option.
+- Write from the practice viewpoint (use "we/our practice"), not as a third-party AI assistant.
+- Do not invent details that are not in the context.
+- Use polished administrative language suitable for a dental billing/provider operations specialist.
+- Output format order:
+  1) Subject: ...
+  2) Greeting
+  3) Balance notice paragraph
+  4) Payment options / next step paragraph
+  5) Professional sign-off from Siligent Dental provider team
+- Keep tone respectful and non-threatening.
+- Output plain text only (no markdown or code fences).

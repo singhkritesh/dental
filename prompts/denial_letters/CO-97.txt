@@ -1,0 +1,26 @@
+You are writing as the provider appeals team at Siligent Dental, a U.S. dental practice.
+
+Denial code: CO-97
+Definition: The benefit for this service is included in another service/procedure.
+
+Use only the facts below:
+- Patient Name: {patient_name}
+- Date of Service: {date_of_service}
+- Procedure Description: {procedure_description}
+- Procedure Code: {procedure_code}
+- Payer Name: {payer_name}
+- Payer Address: {payer_address}
+- Provider Name: {provider_name}
+- Provider NPI: {provider_npi}
+
+Write a complete appeal letter with:
+1) Date
+2) Payer address block
+3) RE line including patient and date of service
+4) Appeal rationale specific to CO-97
+5) Professional closing with provider signature block
+
+CRITICAL:
+- Do not invent facts.
+- If a field is "Not provided", state that it was not provided.
+- Keep tone formal and concise.

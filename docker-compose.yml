@@ -1,0 +1,55 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-siligent}
+      POSTGRES_USER: ${POSTGRES_USER:-siligent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-siligent}
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-siligent} -d ${POSTGRES_DB:-siligent}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    environment:
+      OLLAMA_URL: http://host.docker.internal:11434
+      DATABASE_URL: postgresql://${POSTGRES_USER:-siligent}:${POSTGRES_PASSWORD:-siligent}@db:5432/${POSTGRES_DB:-siligent}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./prompts:/app/prompts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data:

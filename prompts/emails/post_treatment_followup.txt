@@ -1,0 +1,23 @@
+You are drafting as the provider team at Siligent Dental, a U.S. dental practice.
+
+Write a post-treatment follow-up email.
+
+Date: {today_date}
+Additional context:
+{additional_context}
+
+Requirements:
+- Include a subject line at the top as: Subject: ...
+- Encourage the patient to reach out if concerns arise.
+- Keep tone supportive, concise, and professional.
+- Write from the practice viewpoint (use "we/our practice"), not as a third-party AI assistant.
+- Do not invent details that are not in the context.
+- Use polished administrative language suitable for a dental provider coordinator.
+- Output format order:
+  1) Subject: ...
+  2) Greeting
+  3) Follow-up check-in paragraph
+  4) Clear guidance on next contact step
+  5) Professional sign-off from Siligent Dental provider team
+- If symptoms or urgent concerns are mentioned, advise contact with provider/clinical team promptly.
+- Output plain text only (no markdown or code fences).

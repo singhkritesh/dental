@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+import unittest
+
+from services.document_pipeline import (
+    MAX_IMAGE_BYTES_FOR_LLM,
+    _is_draft_structurally_valid,
+    _is_summary_bullet_draft,
+    extract_document_content,
+    extract_text_from_payload,
+    stabilize_structured_output,
+    validate_upload_constraints,
+)
+from services.errors import AppError
+
+
+class DocumentPipelineTests(unittest.TestCase):
+    def test_validate_upload_constraints(self) -> None:
+        with self.assertRaises(AppError):
+            validate_upload_constraints(0)
+        with self.assertRaises(AppError):
+            validate_upload_constraints(4)
+        validate_upload_constraints(3)
+
+    def test_extract_text_plain_file(self) -> None:
+        text = extract_text_from_payload("sample.txt", b"hello world")
+        self.assertEqual(text, "hello world")
+
+    def test_extract_text_eml_file(self) -> None:
+        text = extract_text_from_payload("thread.eml", b"Subject: Hello\n\nBody")
+        self.assertIn("Subject: Hello", text)
+
+    def test_doc_binary_files_are_not_advertised_as_supported(self) -> None:
+        with self.assertRaises(AppError) as ctx:
+            extract_text_from_payload("legacy.doc", b"\xd0\xcf\x11\xe0binary")
+        self.assertEqual(ctx.exception.code, "UNSUPPORTED_FILE_TYPE")
+
+    def test_image_payload_attached_for_llm_when_under_limit(self) -> None:
+        item = extract_document_content(
+            filename="small.png",
+            content_type="image/png",
+            payload=b"a" * 1024,
+        )
+        self.assertEqual(len(item.image_base64_list), 1)
+
+    def test_image_payload_skipped_for_llm_when_over_limit(self) -> None:
+        item = extract_document_content(
+            filename="large.png",
+            content_type="image/png",
+            payload=b"a" * (MAX_IMAGE_BYTES_FOR_LLM + 1),
+        )
+        self.assertEqual(item.image_base64_list, [])
+
+    def test_stabilize_structured_output_fills_low_signal_payload(self) -> None:
+        stabilized = stabilize_structured_output(
+            structured={
+                "title": "Generated Draft",
+                "purpose": "Document response",
+                "key_points": [],
+                "sections": [],
+                "action_items": [],
+                "final_draft": "Document response",
+            },
+            detected_template_type="email",
+            context_text="[Document: resume.txt] Kritesh Singh is a software engineer with Python and AI experience. "
+            "He has led automation projects and improved workflow efficiency.",
+        )
+        self.assertEqual(stabilized["title"], "Email Draft")
+        self.assertIn("Compose a clear email", stabilized["purpose"])
+        self.assertGreater(len(stabilized["key_points"]), 0)
+        self.assertGreater(len(stabilized["sections"]), 0)
+        self.assertIn("Subject:", stabilized["final_draft"])
+
+    def test_summary_bullets_detected_as_invalid_draft(self) -> None:
+        draft = "\n".join(
+            [
+                "- Point one about context",
+                "- Point two about context",
+                "- Point three about context",
+                "- Point four about context",
+            ]
+        )
+        self.assertTrue(_is_summary_bullet_draft(draft))
+        self.assertFalse(_is_draft_structurally_valid(template_type="email", final_draft=draft))
+
+    def test_email_structure_validation(self) -> None:
+        valid_email = "\n".join(
+            [
+                "Subject: Appointment confirmation",
+                "",
+                "Hello Patient,",
+                "",
+                "We are writing to confirm your appointment details.",
+                "",
+                "Please reply to confirm.",
+                "",
+                "Best regards,",
+                "Siligent Dental Front Office",
+            ]
+        )
+        self.assertTrue(_is_draft_structurally_valid(template_type="email", final_draft=valid_email))
+
+
+if __name__ == "__main__":
+    unittest.main()
