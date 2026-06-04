@@ -317,6 +317,10 @@ a {
   grid-template-columns: repeat(5, minmax(140px, 1fr));
 }
 
+.wizard-steps.compact {
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+}
+
 .wizard-step {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);

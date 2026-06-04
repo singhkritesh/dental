@@ -5,6 +5,7 @@ import unittest
 from services.email_guardrails import (
     build_enforced_email_prompt,
     generate_with_guardrails,
+    has_missing_data_markers,
     is_role_and_purpose_compliant,
 )
 
@@ -37,6 +38,21 @@ class EmailGuardrailTests(unittest.TestCase):
             purpose_label="General Inquiry Response",
         )
         self.assertFalse(compliant)
+
+    def test_compliance_rejects_not_provided_and_placeholders(self) -> None:
+        self.assertTrue(has_missing_data_markers("Subject: Test\n\nNot provided"))
+        self.assertTrue(has_missing_data_markers("Hello {{patient_name}}"))
+        self.assertFalse(
+            is_role_and_purpose_compliant(
+                draft=(
+                    "Subject: Appointment Confirmation\n\n"
+                    "Hello,\n\n"
+                    "We can help, but the appointment date is Not provided.\n\n"
+                    "Best regards,\nSiligent Dental Provider Team"
+                ),
+                purpose_label="appointment_confirmation",
+            )
+        )
 
     def test_generate_rewrites_when_first_pass_misses_purpose(self) -> None:
         fake = _FakeOllama(

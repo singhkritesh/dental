@@ -22,6 +22,10 @@ export type TextResponse = {
 };
 
 export type InsuranceVerificationSummary = {
+  coverage_verdict: string;
+  verdict_rationale: string;
+  requested_procedure: string;
+  requested_condition: string;
   covered_procedures: string[];
   estimated_copay: string;
   prior_authorization_required: string;

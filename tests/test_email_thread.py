@@ -3,6 +3,8 @@ from __future__ import annotations
 import unittest
 
 from services.email_thread import (
+    EmailThreadAnalysis,
+    ensure_email_reply_has_no_missing_markers,
     extract_latest_message,
     heuristic_analyze_email_thread,
     normalize_email_thread,
@@ -42,6 +44,28 @@ class EmailThreadTests(unittest.TestCase):
             context_text="appointment confirm",
         )
         self.assertEqual(ranked[0]["name"], "Appointment")
+
+    def test_final_email_reply_falls_back_when_missing_markers_remain(self) -> None:
+        analysis = EmailThreadAnalysis(
+            intent="appointment_confirmation",
+            confidence=0.8,
+            urgency="normal",
+            tone="professional",
+            thread_summary="Patient asked to confirm an appointment.",
+            latest_message="Can you confirm my appointment?",
+            extracted_entities={},
+            missing_fields=["appointment_date", "patient_name"],
+            risk_flags=[],
+            recommended_action="Ask for missing details.",
+        )
+        cleaned = ensure_email_reply_has_no_missing_markers(
+            draft="Subject: Appointment\n\nHello,\n\nYour appointment is Not provided.\n\nBest regards,\nSiligent Dental Provider Team",
+            analysis=analysis,
+            runtime_fields={},
+        )
+        self.assertNotIn("Not provided", cleaned)
+        self.assertIn("appointment date", cleaned)
+        self.assertIn("patient name", cleaned)
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@ export function NotFoundPage() {
         <p>The requested route does not exist in this frontend app.</p>
       </header>
       <div className="panel">
-        <Link className="secondary-btn inline-link" to="/smart-composer">
-          Go to Compose
+        <Link className="secondary-btn inline-link" to="/insurance-verification">
+          Go to Insurance Verification
         </Link>
       </div>
     </section>

@@ -1,0 +1,333 @@
+{
+  "spec_version": "1.0.0",
+  "generated_on": "2026-05-31",
+  "source_workbook": "/Users/kritesh/Downloads/Dentrix Headers.xlsx",
+  "source_sheets": [
+    "claim.csv",
+    "claimadjreason.csv",
+    "claiminfo.csv",
+    "claimstatusnotelink.csv",
+    "clinicalnote.csv"
+  ],
+  "scope": {
+    "supported_templates_from_claim_domain": [
+      "denial_letter",
+      "rebuttal_letter",
+      "insurance_verification"
+    ],
+    "not_supported_from_claim_domain_only": [
+      "email",
+      "appointment_confirmation",
+      "appointment_confirmation_sms",
+      "appointment_reminder_sms",
+      "health_history_update_sms",
+      "new_patient_forms_sms",
+      "comprehensive_investment_letter",
+      "invisalign_investment_letter"
+    ]
+  },
+  "join_graph": [
+    {
+      "name": "claim_to_adjustment",
+      "left": "claim.claimid",
+      "right": "claimadjreason.claimid",
+      "join_type": "left"
+    },
+    {
+      "name": "claim_to_claiminfo",
+      "left": "claim.claiminfid",
+      "right": "claiminfo.claiminfid",
+      "join_type": "left"
+    },
+    {
+      "name": "claim_to_statusnote",
+      "left": "claim.claimid",
+      "right": "claimstatusnotelink.claimid",
+      "join_type": "left"
+    },
+    {
+      "name": "statusnote_to_clinicalnote",
+      "left": "claimstatusnotelink.noteid",
+      "right": "clinicalnote.cnotesid",
+      "join_type": "left"
+    }
+  ],
+  "normalization_rules": {
+    "date_fields": {
+      "target_format": "YYYY-MM-DD",
+      "input_candidates": [
+        "claim.dateofclaim",
+        "claim.datesent",
+        "claim.datereceived",
+        "claim.tracerdate",
+        "claimstatusnotelink.statusdatetime",
+        "claiminfo.firstvisitdate",
+        "claiminfo.accidentdate"
+      ]
+    },
+    "currency_fields": {
+      "target_format": "decimal_string_with_2dp",
+      "input_candidates": [
+        "claim.totalbilled",
+        "claim.itemtotal",
+        "claim.totalreceived",
+        "claim.est",
+        "claim.stdded",
+        "claim.prvded",
+        "claim.otherded",
+        "claim.totalpayadjusted",
+        "claim.totalchgadjusted",
+        "claimadjreason.claimadjamount"
+      ]
+    },
+    "null_policy": {
+      "strategy": "use_empty_string_and_flag_missing",
+      "hard_fail_variables": [
+        "patient_name",
+        "payer_name",
+        "date_of_service",
+        "member_id",
+        "patient_dob"
+      ]
+    }
+  },
+  "external_reference_requirements": {
+    "patient_master": {
+      "required_for": [
+        "patient_name",
+        "patient_dob",
+        "patient_address_line_1",
+        "patient_address_line_2"
+      ],
+      "join_key": "claim.patid"
+    },
+    "provider_master": {
+      "required_for": [
+        "provider_name",
+        "provider_npi",
+        "team_member_name",
+        "team_member_title"
+      ],
+      "join_key": "claim.provid_or_claim.renderprovid"
+    },
+    "payer_master": {
+      "required_for": [
+        "payer_name",
+        "payer_address"
+      ],
+      "join_keys": [
+        "claim.insid",
+        "claim.inspartyid",
+        "claim.medinsid",
+        "claim.medinspartyid"
+      ]
+    },
+    "procedure_or_claim_line_table": {
+      "required_for": [
+        "procedure_code",
+        "procedure_description",
+        "covered_procedures"
+      ],
+      "note": "Current workbook is claim-header centric and does not carry complete line-item CDT details."
+    }
+  },
+  "template_mappings": {
+    "denial_letter": {
+      "inherits": null,
+      "variables": {
+        "claim_or_reference": {
+          "priority": [
+            "claim.claimid",
+            "claiminfo.insrefnum",
+            "claim.checknum"
+          ],
+          "required": true
+        },
+        "date_of_service": {
+          "priority": [
+            "claim.dateofclaim",
+            "claiminfo.firstvisitdate"
+          ],
+          "required": true
+        },
+        "payer_name": {
+          "priority": [
+            "payer_master.name_by_insid(claim.insid)",
+            "payer_master.name_by_inspartyid(claim.inspartyid)",
+            "claim.insid"
+          ],
+          "required": true
+        },
+        "payer_address": {
+          "priority": [
+            "payer_master.address_by_insid(claim.insid)",
+            "payer_master.address_by_inspartyid(claim.inspartyid)"
+          ],
+          "required": false
+        },
+        "patient_name": {
+          "priority": [
+            "patient_master.full_name_by_patid(claim.patid)",
+            "claim.patid"
+          ],
+          "required": true
+        },
+        "procedure_code": {
+          "priority": [
+            "procedure_table.cdt_code_by_claimid(claim.claimid)",
+            "claim.meddiagcode1",
+            "claiminfo.diagcode1"
+          ],
+          "required": false
+        },
+        "procedure_description": {
+          "priority": [
+            "procedure_table.description_by_claimid(claim.claimid)",
+            "claimadjreason.claimadjreason",
+            "clinicalnote.notetext_excerpt"
+          ],
+          "required": true
+        },
+        "supporting_rationale": {
+          "composition": [
+            "claimadjreason.claimadjgroup",
+            "claimadjreason.claimadjreason",
+            "claimadjreason.claimadjamount",
+            "claimstatusnotelink.notestatus",
+            "clinicalnote.notetext"
+          ],
+          "required": false
+        },
+        "provider_name": {
+          "priority": [
+            "provider_master.name_by_provid(claim.provid)",
+            "provider_master.name_by_provid(claim.renderprovid)",
+            "claim.provid"
+          ],
+          "required": false
+        },
+        "provider_npi": {
+          "priority": [
+            "provider_master.npi_by_provid(claim.provid)",
+            "provider_master.npi_by_provid(claim.renderprovid)"
+          ],
+          "required": false
+        },
+        "today_date": {
+          "priority": [
+            "system.current_date"
+          ],
+          "required": true
+        }
+      }
+    },
+    "rebuttal_letter": {
+      "inherits": "denial_letter",
+      "variables": {}
+    },
+    "insurance_verification": {
+      "inherits": null,
+      "variables": {
+        "payer_name": {
+          "priority": [
+            "payer_master.name_by_insid(claim.insid)",
+            "payer_master.name_by_inspartyid(claim.inspartyid)",
+            "claim.insid"
+          ],
+          "required": true
+        },
+        "member_id": {
+          "priority": [
+            "claim.insuredid",
+            "claim.medinsuredid",
+            "claim.secinsuredid"
+          ],
+          "required": true
+        },
+        "group_number": {
+          "priority": [
+            "claim.idnum",
+            "claim.idnum2",
+            "claim.secidnum"
+          ],
+          "required": false
+        },
+        "patient_dob": {
+          "priority": [
+            "patient_master.dob_by_patid(claim.patid)"
+          ],
+          "required": true
+        },
+        "patient_name": {
+          "priority": [
+            "patient_master.full_name_by_patid(claim.patid)",
+            "claim.patid"
+          ],
+          "required": false
+        },
+        "plan_type": {
+          "priority": [
+            "claim.instype",
+            "claim.claimtype",
+            "claiminfo.medclaimtype"
+          ],
+          "required": false
+        },
+        "coverage_findings": {
+          "composition": [
+            "claim.totalbilled",
+            "claim.totalreceived",
+            "claim.est",
+            "claim.partialpaidflag",
+            "claim.totalpayadjusted",
+            "claim.totalchgadjusted"
+          ],
+          "required": false
+        },
+        "limitations": {
+          "composition": [
+            "claim.stdded",
+            "claim.prvded",
+            "claim.otherded",
+            "claiminfo.reasonforpreauth",
+            "claiminfo.otherinsdescript",
+            "claiminfo.hsndeductibleflag",
+            "claiminfo.partialcovstartdate",
+            "claiminfo.eligpending"
+          ],
+          "required": false
+        },
+        "next_actions": {
+          "composition": [
+            "claim.status",
+            "claim.sentclaimstatus",
+            "claim.tracerdate",
+            "claimstatusnotelink.notestatus",
+            "claimstatusnotelink.statusdatetime"
+          ],
+          "required": false
+        }
+      }
+    }
+  },
+  "implementation_contract": {
+    "pre_generation_validation": [
+      "resolve all required variables for selected template",
+      "collect missing required variables into a blocking error payload",
+      "do not hallucinate unresolved identity fields (patient/provider/payer names)",
+      "mark optional unresolved fields as 'Not available' where appropriate"
+    ],
+    "recommended_error_code_for_missing_fields": "MISSING_VARIABLES",
+    "recommended_error_payload_shape": {
+      "error": true,
+      "code": "MISSING_VARIABLES",
+      "message": "Missing required fields for template generation.",
+      "details": {
+        "template_type": "string",
+        "missing_fields": [
+          "string"
+        ]
+      }
+    }
+  }
+}

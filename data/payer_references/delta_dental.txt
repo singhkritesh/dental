@@ -2,9 +2,9 @@ Payer: Delta Dental
 Plan Snapshot (sample reference):
 - Preventive exams and cleanings: covered at 100%, no deductible
 - Basic restorative services: covered at 80% after deductible
+- Endodontic services, including root canal therapy (RCT): covered at 80% after deductible
 - Major restorative services (crowns, bridges): covered at 50% after deductible
 - Annual maximum: $1,500
 - Waiting period for major services: 12 months for new members
 - Prior authorization: recommended for major services over $750
 - Common exclusions: cosmetic-only procedures, lost appliance replacement more than once per 5 years
-

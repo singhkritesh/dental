@@ -16,6 +16,8 @@ type VerificationFormState = {
   group_number: string;
   patient_dob: string;
   plan_type: string;
+  requested_procedure: string;
+  requested_condition: string;
 };
 
 type VerificationPersistedState = {
@@ -47,7 +49,9 @@ export function InsuranceVerificationPage() {
     member_id: "",
     group_number: "",
     patient_dob: defaultDob(),
-    plan_type: PLAN_TYPES[0]
+    plan_type: PLAN_TYPES[0],
+    requested_procedure: "",
+    requested_condition: ""
   });
   const hasPayerOptions = payers.length > 0;
 
@@ -309,6 +313,25 @@ export function InsuranceVerificationPage() {
               ))}
             </select>
           </label>
+          <label>
+            Requested Procedure / Service
+            <input
+              value={form.requested_procedure}
+              onChange={(event) => updateField("requested_procedure", event.target.value)}
+              placeholder="Example: periodic oral exam, crown D2740, bitewing radiographs"
+            />
+          </label>
+          <label>
+            Condition / Diagnosis
+            <input
+              value={form.requested_condition}
+              onChange={(event) => updateField("requested_condition", event.target.value)}
+              placeholder="Example: cracked tooth, periodontal maintenance, preventive visit"
+            />
+          </label>
+          <p className="helper">
+            The verdict checks whether this requested procedure or condition is explicitly supported by the saved payer reference.
+          </p>
           <button className="primary-btn" type="submit" disabled={isLoading}>
             {isLoading ? "Generating..." : "Generate verification"}
           </button>
@@ -326,6 +349,8 @@ export function InsuranceVerificationPage() {
                 group_number: "",
                 patient_dob: defaultDob(),
                 plan_type: PLAN_TYPES[0],
+                requested_procedure: "",
+                requested_condition: "",
               });
             }}
             disabled={isLoading}
@@ -343,6 +368,17 @@ export function InsuranceVerificationPage() {
             <p className="placeholder">Summary appears here after generation.</p>
           ) : (
             <div className="summary">
+              <h3>Coverage Verdict</h3>
+              <p>
+                <strong>{summary.coverage_verdict}</strong>
+              </p>
+              <p>{summary.verdict_rationale}</p>
+              <p>
+                <strong>Requested Procedure:</strong> {summary.requested_procedure}
+              </p>
+              <p>
+                <strong>Requested Condition:</strong> {summary.requested_condition}
+              </p>
               <h3>Covered Procedures</h3>
               {summary.covered_procedures.length > 0 ? (
                 <ul>

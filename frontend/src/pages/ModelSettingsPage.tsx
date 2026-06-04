@@ -10,9 +10,9 @@ import type { AuditEventItem, ModelPreferences } from "../lib/types";
 const USE_CASE_LABELS: Record<string, string> = {
   denial_letters: "Denial Letters",
   insurance_verification: "Insurance Verification",
-  email_drafting: "Email Drafting",
-  email_thread: "Email Thread Assistant",
-  document_ingestion: "Document Ingestion"
+  email_thread: "Email Exchange",
+  email_drafting: "Standalone Email Drafts",
+  document_ingestion: "Document-Based Drafts"
 };
 
 export function ModelSettingsPage() {
@@ -154,7 +154,7 @@ export function ModelSettingsPage() {
         </header>
         <Notice
           type="error"
-          message="Admin access required. You can continue using Smart Composer and legacy generation tools."
+          message="Admin access required. You can continue using insurance verification, denial letters, and email exchange."
         />
       </section>
     );

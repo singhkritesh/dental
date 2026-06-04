@@ -16,6 +16,7 @@ from services.prompt_registry import (
     resolve_email_prompt,
 )
 from services.prompt_engine import compose_prompt, validate_required_fields
+from services.template_runtime import to_prompt_json
 from services.verification import (
     enforce_grounded_verification_summary,
     extract_json_object,
@@ -303,6 +304,25 @@ def generate_insurance_verification(
     validate_required_fields(variables, VERIFICATION_REQUIRED_FIELDS)
 
     reference_text = load_payer_reference(payer_refs_dir, variables["payer_name"])
+    verification_context_json = to_prompt_json(
+        {
+            "trusted_verification_input": {
+                "payer_name": variables["payer_name"].strip(),
+                "member_id": variables.get("member_id", "").strip(),
+                "group_number": variables.get("group_number", "").strip() or "Not provided",
+                "patient_dob": variables.get("patient_dob", "").strip(),
+                "plan_type": variables.get("plan_type", "").strip() or "Not provided",
+                "requested_procedure": variables.get("requested_procedure", "").strip() or "Not provided",
+                "requested_condition": variables.get("requested_condition", "").strip() or "Not provided",
+            },
+            "source_policy": {
+                "trusted_verification_input": "Staff-entered or system-resolved patient and plan identifiers.",
+                "payer_reference_context": "Only source for benefits, coverage, exclusions, and limitations.",
+                "missing_information": "Return Not available for missing or unsupported facts.",
+            },
+        },
+        max_chars=4_000,
+    )
     prompt = compose_prompt(
         prompts_dir,
         INSURANCE_VERIFICATION_PROMPT,
@@ -312,6 +332,9 @@ def generate_insurance_verification(
             "group_number": variables.get("group_number", "").strip() or "Not provided",
             "patient_dob": variables.get("patient_dob", "").strip(),
             "plan_type": variables.get("plan_type", "").strip() or "Not provided",
+            "requested_procedure": variables.get("requested_procedure", "").strip() or "Not provided",
+            "requested_condition": variables.get("requested_condition", "").strip() or "Not provided",
+            "verification_context_json": verification_context_json,
             "payer_reference_text": reference_text,
         },
     )

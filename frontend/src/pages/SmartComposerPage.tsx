@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 import { Notice } from "../components/Notice";
 import { OutputActions } from "../components/OutputActions";
@@ -54,6 +54,38 @@ type ComposerPersistedState = {
 type StepState = "pending" | "active" | "done";
 
 const COMPOSER_STATE_STORAGE_KEY = "siligent_smart_composer_state_v2";
+const DENIAL_RUNTIME_FIELD_KEYS = [
+  "today_date",
+  "denial_code",
+  "denial_reason",
+  "appeal_basis",
+  "payer_name",
+  "payer_address",
+  "patient_name",
+  "date_of_service",
+  "claim_or_reference",
+  "procedure_description",
+  "procedure_code",
+  "supporting_rationale",
+  "provider_name",
+  "provider_npi",
+];
+const EMAIL_THREAD_RUNTIME_FIELD_KEYS = [
+  "patient_name",
+  "requester_name",
+  "date_of_birth",
+  "phone",
+  "email",
+  "payer_name",
+  "member_id",
+  "claim_id",
+  "appointment_date",
+  "appointment_time",
+  "provider_name",
+  "office_phone",
+  "office_email",
+  "next_step",
+];
 
 function normalizeTemplateTypeInput(value: string): string {
   return value
@@ -108,15 +140,29 @@ function resultMissingRuntimeFields(result: ComposerResult): string[] {
     : result.data.missing_runtime_fields;
 }
 
+function hasEmailMissingMarkers(text: string): boolean {
+  return (
+    /\bnot provided\b/i.test(text) ||
+    /\{\{\s*[A-Za-z][A-Za-z0-9_. -]{0,79}\s*\}\}/.test(text) ||
+    /\{[A-Za-z][A-Za-z0-9_. -]{0,79}\}/.test(text) ||
+    /\[\[\s*[A-Za-z][A-Za-z0-9_. -]{0,79}\s*\]\]/.test(text)
+  );
+}
+
 export function SmartComposerPage() {
   const { user, bootstrap } = useAuth();
-  const { tasks, runTask, getInFlight } = useGenerationTasks();
+  const { tasks, runTask, getInFlight, clearTask } = useGenerationTasks();
   const isAdmin = isAdminContext(user, bootstrap);
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const isDenialLetterRoute = location.pathname === "/denial-letters";
+  const forcedTemplateType = isDenialLetterRoute ? "denial_letter" : undefined;
 
   const initialModeParam = searchParams.get("mode")?.trim().toLowerCase();
   const initialMode: ComposerMode =
-    initialModeParam === "thread" || initialModeParam === "reply_thread"
+    location.pathname === "/email-thread" ||
+    initialModeParam === "thread" ||
+    initialModeParam === "reply_thread"
       ? "reply_thread"
       : "new_draft";
 
@@ -145,6 +191,16 @@ export function SmartComposerPage() {
   const [editableDraft, setEditableDraft] = useState("");
   const [isEditingDraft, setIsEditingDraft] = useState(false);
   const taskState = tasks["smart_composer_generate"];
+
+  useEffect(() => {
+    if (location.pathname === "/email-thread") {
+      setMode("reply_thread");
+      return;
+    }
+    if (location.pathname === "/denial-letters" || location.pathname === "/email-drafting") {
+      setMode("new_draft");
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     const raw = window.sessionStorage.getItem(COMPOSER_STATE_STORAGE_KEY);
@@ -247,7 +303,13 @@ export function SmartComposerPage() {
         setRequestedTemplateType((current) => current || templateTypeData.template_types[0] || "");
         setModelName((current) => current || resolveModelForMode(mode, modelsData, prefs));
 
-        const prefillType = searchParams.get("templateType")?.trim() ?? "";
+        const routeTemplateType =
+          location.pathname === "/denial-letters"
+            ? "denial_letter"
+            : location.pathname === "/email-drafting"
+              ? "email"
+              : "";
+        const prefillType = searchParams.get("templateType")?.trim() || routeTemplateType;
         const prefillIndexRaw = searchParams.get("templateIndex")?.trim() ?? "";
         if (prefillType) {
           if (templateTypeData.template_types.includes(prefillType)) {
@@ -279,7 +341,7 @@ export function SmartComposerPage() {
     return () => {
       active = false;
     };
-  }, [mode, searchParams]);
+  }, [location.pathname, mode, searchParams]);
 
   useEffect(() => {
     setModelName(resolveModelForMode(mode, models, preferences));
@@ -301,6 +363,20 @@ export function SmartComposerPage() {
       }
       void pending
         .then((outcome) => {
+          if (
+            mode === "reply_thread" &&
+            outcome.result.kind === "thread" &&
+            hasEmailMissingMarkers(resultDraftText(outcome.result))
+          ) {
+            clearTask("smart_composer_generate");
+            setResult(null);
+            setEditableDraft("");
+            setNotice({
+              type: "info",
+              message: "A stale email draft was cleared. Generate again to apply the latest safeguards.",
+            });
+            return;
+          }
           setResult(outcome.result);
           setNotice({ type: "success", message: outcome.successMessage });
         })
@@ -315,6 +391,21 @@ export function SmartComposerPage() {
     }
     if (taskState.status === "success" && taskState.result) {
       const outcome = taskState.result as ComposerTaskOutcome;
+      if (
+        mode === "reply_thread" &&
+        outcome.result.kind === "thread" &&
+        hasEmailMissingMarkers(resultDraftText(outcome.result))
+      ) {
+        clearTask("smart_composer_generate");
+        setResult(null);
+        setEditableDraft("");
+        setNotice({
+          type: "info",
+          message: "A stale email draft was cleared. Generate again to apply the latest safeguards.",
+        });
+        setLoading(false);
+        return;
+      }
       setResult(outcome.result);
       setNotice({ type: "success", message: outcome.successMessage });
       setLoading(false);
@@ -323,7 +414,7 @@ export function SmartComposerPage() {
     if (taskState.status === "error") {
       setLoading(false);
     }
-  }, [getInFlight, taskState]);
+  }, [clearTask, getInFlight, mode, taskState]);
 
   const normalizedCustomType = useMemo(
     () => normalizeTemplateTypeInput(customTemplateType),
@@ -334,6 +425,9 @@ export function SmartComposerPage() {
     if (mode === "reply_thread") {
       return undefined;
     }
+    if (forcedTemplateType) {
+      return forcedTemplateType;
+    }
     if (purposeMode === "auto") {
       return undefined;
     }
@@ -341,7 +435,7 @@ export function SmartComposerPage() {
       return requestedTemplateType.trim() || undefined;
     }
     return normalizedCustomType || undefined;
-  }, [mode, normalizedCustomType, purposeMode, requestedTemplateType]);
+  }, [forcedTemplateType, mode, normalizedCustomType, purposeMode, requestedTemplateType]);
 
   const availableTemplatesForSelection = useMemo(() => {
     if (mode === "reply_thread") {
@@ -351,6 +445,9 @@ export function SmartComposerPage() {
         return bEmail - aEmail;
       });
       return ranked;
+    }
+    if (forcedTemplateType) {
+      return templates.filter((item) => item.type === forcedTemplateType);
     }
     if (purposeMode === "auto") {
       return templates;
@@ -362,7 +459,7 @@ export function SmartComposerPage() {
       return templates;
     }
     return templates.filter((item) => item.type === normalizedCustomType);
-  }, [mode, normalizedCustomType, purposeMode, requestedTemplateType, templates]);
+  }, [forcedTemplateType, mode, normalizedCustomType, purposeMode, requestedTemplateType, templates]);
 
   const selectedTemplate = useMemo(() => {
     if (selectedTemplateIndex === undefined) {
@@ -381,6 +478,19 @@ export function SmartComposerPage() {
   }, [availableTemplatesForSelection, selectedTemplateIndex]);
 
   const runtimeFieldCount = Object.keys(compactRuntimeFields(runtimeFields)).length;
+  const suggestedRuntimeKeys = useMemo(() => {
+    if (selectedTemplate?.placeholders.length) {
+      const baseKeys = mode === "reply_thread" ? EMAIL_THREAD_RUNTIME_FIELD_KEYS : [];
+      return Array.from(new Set([...baseKeys, ...selectedTemplate.placeholders]));
+    }
+    if (mode === "reply_thread") {
+      return EMAIL_THREAD_RUNTIME_FIELD_KEYS;
+    }
+    if (requestedTypeForRequest === "denial_letter") {
+      return DENIAL_RUNTIME_FIELD_KEYS;
+    }
+    return [];
+  }, [mode, requestedTypeForRequest, selectedTemplate]);
 
   const canGenerate =
     !loading &&
@@ -397,7 +507,7 @@ export function SmartComposerPage() {
   const canSaveTemplate = Boolean(editableDraft.trim() && saveAsTemplateName.trim() && !savingTemplate);
   const uploadStepDone = mode === "reply_thread" ? Boolean(threadText.trim() || files.length > 0) : true;
   const purposeStepDone =
-    mode === "reply_thread"
+    mode === "reply_thread" || Boolean(forcedTemplateType)
       ? true
       : purposeMode === "auto" || purposeMode === "existing" || Boolean(normalizedCustomType);
   const detailsStepDone = runtimeFieldCount > 0;
@@ -408,6 +518,26 @@ export function SmartComposerPage() {
     : mode === "new_draft"
       ? "Add at least one source: upload files, pick a template/purpose, or fill runtime details."
       : "Paste thread text or upload at least one file.";
+  const workflowTitle =
+    mode === "reply_thread"
+      ? "Email Exchange"
+      : requestedTypeForRequest === "denial_letter"
+        ? "Denial Letters"
+        : requestedTypeForRequest === "rebuttal_letter"
+          ? "Rebuttal Letters"
+          : "Document Drafting";
+  const workflowDescription =
+    mode === "reply_thread"
+      ? "Review an email chain and generate a staff-edited reply draft."
+      : requestedTypeForRequest === "denial_letter"
+        ? "Prepare claim denial letters from templates, runtime fields, and supporting documents."
+        : requestedTypeForRequest === "rebuttal_letter"
+          ? "Prepare rebuttal letters from claim context, templates, and supporting documents."
+          : "Generate a structured draft from templates, runtime fields, and optional uploads.";
+  const showPurposeStep = !forcedTemplateType;
+  const detailsStepNumber = showPurposeStep ? 3 : 2;
+  const reviewStepNumber = showPurposeStep ? 4 : 3;
+  const draftStepNumber = showPurposeStep ? 5 : 4;
 
   function stepClass(state: StepState): string {
     if (state === "done") {
@@ -547,31 +677,33 @@ export function SmartComposerPage() {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Compose</h1>
-        <p>Single-page flow: Upload, choose purpose, fill details, review, then generate and edit draft.</p>
+        <h1>{workflowTitle}</h1>
+        <p>{workflowDescription}</p>
       </header>
 
       {notice ? <Notice type={notice.type} message={notice.message} /> : null}
 
-      <div className="wizard-steps" aria-label="Compose steps">
+      <div className={`wizard-steps${showPurposeStep ? "" : " compact"}`} aria-label="Compose steps">
         <div className={stepClass(uploadStepDone ? "done" : "active")}>
           <span className="wizard-step-index">1</span>
           Upload
         </div>
-        <div
-          className={stepClass(
-            purposeStepDone ? "done" : uploadStepDone ? "active" : "pending"
-          )}
-        >
-          <span className="wizard-step-index">2</span>
-          Purpose
-        </div>
+        {showPurposeStep ? (
+          <div
+            className={stepClass(
+              purposeStepDone ? "done" : uploadStepDone ? "active" : "pending"
+            )}
+          >
+            <span className="wizard-step-index">2</span>
+            Purpose
+          </div>
+        ) : null}
         <div
           className={stepClass(
             detailsStepDone ? "done" : purposeStepDone ? "active" : "pending"
           )}
         >
-          <span className="wizard-step-index">3</span>
+          <span className="wizard-step-index">{detailsStepNumber}</span>
           Details
         </div>
         <div
@@ -579,11 +711,11 @@ export function SmartComposerPage() {
             reviewStepDone ? "done" : detailsStepDone || purposeStepDone ? "active" : "pending"
           )}
         >
-          <span className="wizard-step-index">4</span>
+          <span className="wizard-step-index">{reviewStepNumber}</span>
           Review
         </div>
         <div className={stepClass(draftStepDone ? "done" : reviewStepDone ? "active" : "pending")}>
-          <span className="wizard-step-index">5</span>
+          <span className="wizard-step-index">{draftStepNumber}</span>
           Draft
         </div>
       </div>
@@ -598,7 +730,7 @@ export function SmartComposerPage() {
               onChange={(event) => resetForMode(event.target.value as ComposerMode)}
             >
               <option value="new_draft">New Draft from Documents</option>
-              <option value="reply_thread">Reply to Email Thread</option>
+              <option value="reply_thread">Email Exchange Reply</option>
             </select>
           </label>
 
@@ -661,9 +793,10 @@ export function SmartComposerPage() {
           </details>
         </div>
 
-        <div className="panel">
-          <h2>2. Choose Purpose</h2>
-          {mode === "new_draft" ? (
+        {showPurposeStep ? (
+          <div className="panel">
+            <h2>2. Choose Purpose</h2>
+            {mode === "new_draft" ? (
             <>
               <label className="checkbox-inline">
                 <input
@@ -724,32 +857,45 @@ export function SmartComposerPage() {
             </p>
           )}
 
-          <label>
-            Preferred template (optional)
-            <select
-              value={selectedTemplateIndex ?? ""}
-              onChange={(event) =>
-                setSelectedTemplateIndex(event.target.value ? Number(event.target.value) : undefined)
-              }
-            >
-              <option value="">No preference</option>
-              {availableTemplatesForSelection.map((item) => (
-                <option key={item.index} value={item.index}>
-                  [{item.index}] {item.name} ({item.type}, {templateScopeLabel(item)})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+            <label>
+              Preferred template (optional)
+              <select
+                value={selectedTemplateIndex ?? ""}
+                onChange={(event) =>
+                  setSelectedTemplateIndex(event.target.value ? Number(event.target.value) : undefined)
+                }
+              >
+                <option value="">No preference</option>
+                {availableTemplatesForSelection.map((item) => (
+                  <option key={item.index} value={item.index}>
+                    [{item.index}] {item.name} ({item.type}, {templateScopeLabel(item)})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
 
         <div className="panel">
-          <h2>3. Fill Details</h2>
+          <h2>{detailsStepNumber}. Fill Details</h2>
           <RuntimeFieldsEditor
             values={runtimeFields}
             onChange={setRuntimeFields}
-            suggestedKeys={selectedTemplate?.placeholders ?? []}
-            title="Patient and case details (optional)"
-            helperText="Add any details you already know to personalize the draft."
+            suggestedKeys={suggestedRuntimeKeys}
+            title={
+              mode === "reply_thread"
+                ? "Email reply details"
+                : requestedTypeForRequest === "denial_letter"
+                  ? "Denial letter details"
+                  : "Patient and case details"
+            }
+            helperText={
+              mode === "reply_thread"
+                ? "Fill any known details that should be used in the reply. Blank fields will be requested from the sender instead of guessed."
+                : requestedTypeForRequest === "denial_letter"
+                ? "Fill every known claim detail. Blank fields are intentionally rendered as Not provided."
+                : "Add any details you already know to personalize the draft."
+            }
           />
           {selectedTemplate?.placeholders.length ? (
             <>
@@ -766,7 +912,7 @@ export function SmartComposerPage() {
         </div>
 
         <div className="panel">
-          <h2>4. Review and Generate</h2>
+          <h2>{reviewStepNumber}. Review and Generate</h2>
           <p>
             <strong>Workflow:</strong> {mode === "new_draft" ? "New Draft from Documents" : "Reply to Email Thread"}
           </p>
@@ -775,13 +921,13 @@ export function SmartComposerPage() {
           </p>
           {mode === "reply_thread" ? (
             <p>
-              <strong>Thread text:</strong> {threadText.trim() ? "Provided" : "Not provided"}
+              <strong>Thread text:</strong> {threadText.trim() ? "Pasted" : "No pasted text"}
             </p>
-          ) : (
+          ) : showPurposeStep ? (
             <p>
               <strong>Purpose:</strong> {requestedTypeForRequest ?? "auto-detect"}
             </p>
-          )}
+          ) : null}
           <p>
             <strong>Preferred template:</strong>{" "}
             {selectedTemplate ? `[${selectedTemplate.index}] ${selectedTemplate.name}` : "No explicit template selected"}
@@ -802,7 +948,7 @@ export function SmartComposerPage() {
         </div>
 
         <div className="panel">
-          <h2>5. Draft</h2>
+          <h2>{draftStepNumber}. Draft</h2>
           {!result ? (
             <p className="placeholder">
               {loading

@@ -31,9 +31,12 @@ Format requirements by template type:
   2) Recipient/payer block (or Not provided)
   3) RE line (patient + date of service + claim/topic)
   4) Salutation
-  5) Appeal rationale paragraph(s)
-  6) Clear reconsideration request
-  7) Professional closing + signature block
+  5) Opening paragraph identifying denial code and payer denial reason when provided
+  6) Appeal basis paragraph explaining why Siligent Dental is disputing that denial reason
+  7) Factual support paragraph(s) tied to source records, runtime fields, or uploaded documentation
+  8) Clear reconsideration request
+  9) Professional closing + signature block
+  - Do not invent a denial code, denial reason, policy rule, clinical fact, or appeal basis.
 - insurance_verification:
   - Use a concise memo style with findings, gaps, and next steps.
 - appointment_confirmation:

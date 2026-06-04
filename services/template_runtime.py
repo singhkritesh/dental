@@ -11,6 +11,40 @@ _PLACEHOLDER_PATTERN = re.compile(
     rf"(?<!\{{)\{{({PLACEHOLDER_TOKEN_PATTERN})\}}(?!\}})"
 )
 
+RUNTIME_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "claim_or_reference": (
+        "claim_id",
+        "claim_number",
+        "claim_reference",
+        "reference_number",
+        "reference",
+    ),
+    "denial_code": ("co_code", "carc", "denial_carc", "adjustment_code"),
+    "denial_reason": ("reason_for_denial", "payer_denial_reason", "denial_description"),
+    "appeal_basis": ("appeal_reason", "why_appealing", "appeal_rationale"),
+    "date_of_service": ("dos", "service_date", "visit_date"),
+    "payer_name": ("payer", "insurance_company", "carrier"),
+    "payer_address": ("insurance_address", "carrier_address"),
+    "procedure_description": ("procedure", "service", "treatment", "treatment_description"),
+    "procedure_code": ("code", "cdt_code", "service_code"),
+    "provider_name": ("doctor_name", "dentist", "treating_provider"),
+    "provider_npi": ("npi", "doctor_npi", "dentist_npi"),
+    "clinic_phone": ("office_phone", "phone", "contact_number"),
+    "clinic_name": ("office_name", "practice_name"),
+    "date_of_birth": ("dob", "patient_dob", "birth_date"),
+    "email": ("email_address", "requester_email", "patient_email"),
+    "phone": ("phone_number", "patient_phone", "requester_phone"),
+    "requester_name": ("sender_name", "contact_name"),
+    "office_phone": ("clinic_phone", "practice_phone"),
+    "office_email": ("clinic_email", "practice_email"),
+}
+
+_ALIAS_TO_CANONICAL = {
+    alias: canonical
+    for canonical, aliases in RUNTIME_FIELD_ALIASES.items()
+    for alias in aliases
+}
+
 
 @dataclass(frozen=True)
 class TemplateRenderResult:
@@ -39,6 +73,28 @@ def normalize_runtime_fields(raw: Mapping[str, Any] | None) -> dict[str, str]:
             continue
         normalized[token] = _coerce_runtime_value(value)
     return normalized
+
+
+def expand_runtime_field_aliases(runtime_fields: Mapping[str, str] | None) -> dict[str, str]:
+    """Add canonical field names for common staff-entered aliases without overwriting explicit values."""
+    values = dict(runtime_fields or {})
+    lowered_lookup = {key.lower(): key for key in values}
+
+    for alias, canonical in _ALIAS_TO_CANONICAL.items():
+        if canonical in values:
+            continue
+        source_key = lowered_lookup.get(alias)
+        if source_key and str(values.get(source_key, "")).strip():
+            values[canonical] = values[source_key]
+
+    for canonical, aliases in RUNTIME_FIELD_ALIASES.items():
+        if canonical not in values or not str(values.get(canonical, "")).strip():
+            continue
+        for alias in aliases:
+            if alias not in values:
+                values[alias] = values[canonical]
+
+    return values
 
 
 def _coerce_runtime_value(value: Any) -> str:
@@ -114,3 +170,30 @@ def runtime_fields_to_context_block(
         lines.append(f"- {key}: {values[key]}")
     block = "\n".join(lines)
     return block[:max_chars]
+
+
+def to_prompt_json(value: Mapping[str, Any], *, max_chars: int = 12_000) -> str:
+    """Serialize trusted prompt context deterministically for LLM consumption."""
+    rendered = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+    return rendered[:max_chars]
+
+
+def runtime_fields_to_json_context(
+    runtime_fields: Mapping[str, str] | None,
+    *,
+    max_chars: int = 4_000,
+) -> str:
+    values = {
+        key: value
+        for key, value in sorted((runtime_fields or {}).items())
+        if str(value).strip()
+    }
+    if not values:
+        return ""
+    return to_prompt_json(
+        {
+            "trusted_runtime_fields": values,
+            "source_policy": "Use these values as authoritative patient/account data. Do not invent missing values.",
+        },
+        max_chars=max_chars,
+    )

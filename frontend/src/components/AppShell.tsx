@@ -11,20 +11,16 @@ const NAV_GROUPS: Array<{
   items: Array<{ to: string; label: string }>;
 }> = [
   {
-    title: "Compose",
+    title: "Workflows",
     items: [
-      { to: "/smart-composer", label: "Compose Wizard" }
+      { to: "/insurance-verification", label: "Insurance Verification" },
+      { to: "/denial-letters", label: "Denial Letters" },
+      { to: "/email-thread", label: "Email Exchange" }
     ]
   },
   {
-    title: "More Tools",
+    title: "Setup",
     collapsible: true,
-    items: [
-      { to: "/insurance-verification", label: "Insurance Verification" }
-    ]
-  },
-  {
-    title: "Library",
     items: [{ to: "/template-library", label: "Template Library" }]
   },
   {
@@ -56,7 +52,7 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <Link to="/smart-composer" className="brand">
+        <Link to="/insurance-verification" className="brand">
           <span className="brand-mark">SD</span>
           <div>
             <p className="brand-title">Siligent Dental AI</p>

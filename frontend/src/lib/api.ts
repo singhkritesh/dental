@@ -258,6 +258,8 @@ export const api = {
     group_number?: string;
     patient_dob: string;
     plan_type?: string;
+    requested_procedure?: string;
+    requested_condition?: string;
     model_name?: string;
   }): Promise<InsuranceVerificationResponse> {
     return request<InsuranceVerificationResponse>("/insurance-verification/generate", {

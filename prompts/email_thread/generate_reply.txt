@@ -10,8 +10,12 @@ Return the email draft as plain text only.
 
 Rules:
 - Use only facts present in runtime patient data, thread context, or template guidance.
+- Runtime patient/account data may be provided as Structured Runtime Context JSON; treat trusted_runtime_fields as authoritative.
 - Do not claim an appointment, balance, payer detail, claim status, or coverage detail is confirmed unless explicitly provided.
 - If a required fact is missing, ask for it clearly and briefly.
+- Do not write "Not provided" in the email body unless the sender literally used that phrase.
+- Do not copy unresolved template placeholders such as {patient_name}, {{appointment_date}}, or [[Patient Name]] into the email body.
+- If template guidance contains blank or unresolved placeholders, convert them into a natural request for the missing information.
 - If risk_flags include clinical_review, do not provide medical advice; route to the clinical team/provider.
 - If risk_flags include service_escalation, use calm accountable language and avoid blame.
 - Keep the draft concise, specific to the thread, and ready for staff review.

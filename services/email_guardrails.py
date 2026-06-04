@@ -62,6 +62,12 @@ _CLOSING_PATTERN = re.compile(
 _SIGNATURE_PATTERN = re.compile(
     r"(?mi)\b(siligent dental|provider team|our practice)\b"
 )
+_UNRESOLVED_PLACEHOLDER_PATTERN = re.compile(
+    r"\{\{\s*[A-Za-z][A-Za-z0-9_. -]{0,79}\s*\}\}|"
+    r"(?<!\{)\{[A-Za-z][A-Za-z0-9_. -]{0,79}\}(?!\})|"
+    r"\[\[\s*[A-Za-z][A-Za-z0-9_. -]{0,79}\s*\]\]"
+)
+_NOT_PROVIDED_PATTERN = re.compile(r"\bnot provided\b", re.IGNORECASE)
 
 
 def normalize_purpose_label(value: str) -> str:
@@ -113,6 +119,8 @@ def is_role_and_purpose_compliant(
     lowered = text.lower()
     if any(marker in lowered for marker in _DISALLOWED_ROLE_MARKERS):
         return False
+    if has_missing_data_markers(text):
+        return False
     if not _FIRST_PERSON_PRACTICE_RE.search(text):
         return False
 
@@ -123,6 +131,10 @@ def is_role_and_purpose_compliant(
     if not _has_required_email_structure(text):
         return False
     return True
+
+
+def has_missing_data_markers(text: str) -> bool:
+    return bool(_NOT_PROVIDED_PATTERN.search(text) or _UNRESOLVED_PLACEHOLDER_PATTERN.search(text))
 
 
 def _has_required_email_structure(text: str) -> bool:
@@ -153,6 +165,9 @@ def build_rewrite_prompt(
         f"Purpose rule: {rule}\n"
         "Required email structure: Subject line, greeting, clear body, next step, and professional sign-off.\n"
         "Keep factual details that already exist. Do not add new facts.\n"
+        "Never include the phrase Not provided.\n"
+        "Never include unresolved placeholders like {patient_name}, {{appointment_date}}, or [[Patient Name]].\n"
+        "If a detail is missing, ask for it naturally in the next step instead of inserting a placeholder.\n"
         "Use clear patient-facing language and output final email text only.\n\n"
         "ORIGINAL TEMPLATE INSTRUCTIONS:\n"
         f"{base_prompt}\n\n"

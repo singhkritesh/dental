@@ -17,6 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment dependent
 from services.errors import AppError
 from services.prompt_registry import resolve_document_pipeline_prompt
 from services.prompt_engine import compose_prompt
+from services.template_runtime import to_prompt_json
 from services.verification import extract_json_object
 
 
@@ -249,6 +250,54 @@ def build_document_context(documents: list[PreparedDocument], *, max_chars: int 
         chunks.append(chunk)
     joined = "\n\n".join(chunks).strip()
     return joined[:max_chars]
+
+
+def build_document_generation_context(
+    *,
+    documents: list[PreparedDocument],
+    runtime_fields: dict[str, str] | None = None,
+    selected_template_type: str | None = None,
+    selected_template_name: str | None = None,
+    max_chars: int = 18_000,
+) -> str:
+    """Build a structured prompt context that separates source text from trusted runtime data."""
+    document_rows: list[dict[str, object]] = []
+    text_budget = max(1_000, max_chars - 4_000)
+    per_doc_chars = max(1_000, text_budget // max(1, len(documents)))
+    for doc in documents:
+        text = doc.extracted_text.strip()
+        document_rows.append(
+            {
+                "upload_id": doc.upload_id,
+                "original_name": doc.original_name,
+                "content_type": doc.content_type,
+                "extension": doc.extension,
+                "size_bytes": doc.size_bytes,
+                "has_extracted_text": bool(text),
+                "has_image_context": bool(doc.image_base64_list),
+                "extracted_text": text[:per_doc_chars] if text else "No extracted text available.",
+            }
+        )
+
+    payload = {
+        "workflow": {
+            "selected_template_type": selected_template_type or "auto_detect",
+            "selected_template_name": selected_template_name or "Not selected",
+            "generation_goal": "Create a dental administrative communication draft for staff review.",
+        },
+        "trusted_runtime_fields": {
+            key: value
+            for key, value in sorted((runtime_fields or {}).items())
+            if str(value).strip()
+        },
+        "source_documents": document_rows,
+        "source_policy": {
+            "trusted_runtime_fields": "Authoritative patient/account details entered by staff or resolved from system data.",
+            "source_documents": "Uploaded/pasted source context. Use only facts present here or in trusted_runtime_fields.",
+            "missing_information": "Output Not provided where required facts are missing.",
+        },
+    }
+    return "[Structured Generation Context JSON]\n" + to_prompt_json(payload, max_chars=max_chars)
 
 
 def heuristic_detect_template_type(context_text: str, available_types: list[str]) -> tuple[str, float, str]:

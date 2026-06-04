@@ -38,7 +38,9 @@ class _FakeOllamaClient:
     def generate(self, prompt: str, **_: object) -> str:
         if "Return ONLY one valid JSON object" in prompt:
             return (
-                '{"covered_procedures":["Exam"],"estimated_copay":"20%",'
+                '{"coverage_verdict":"Covered","verdict_rationale":"Exam appears in reference.",'
+                '"requested_procedure":"Exam","requested_condition":"Preventive visit",'
+                '"covered_procedures":["Exam"],"estimated_copay":"20%",'
                 '"prior_authorization_required":"No","annual_maximum":"$1000",'
                 '"waiting_periods":"None","notable_exclusions_limitations":"Cosmetic excluded"}'
             )
@@ -74,6 +76,28 @@ class _FakeOllamaUngroundedEmail(_FakeOllamaClient):
                 "Subject: Appointment Reminder\n\n"
                 "Hello,\n\n"
                 "We are reminding you of your appointment on 2027-01-01 at 11:00 AM.\n\n"
+                "Best regards,\nSiligent Dental Provider Team"
+            )
+        return super().generate(prompt, **_)
+
+
+class _FakeOllamaEmailNotProvided(_FakeOllamaClient):
+    def generate(self, prompt: str, **_: object) -> str:
+        if "email thread analysis assistant" in prompt:
+            return (
+                '{"intent":"appointment_confirmation","confidence":0.88,'
+                '"urgency":"normal","tone":"professional",'
+                '"thread_summary":"Patient asked to confirm appointment.",'
+                '"latest_message":"Can you confirm my appointment?",'
+                '"extracted_entities":{},'
+                '"missing_fields":["appointment_date"],"risk_flags":[],'
+                '"recommended_action":"Ask for missing details."}'
+            )
+        if "professional dental office email drafting assistant" in prompt or "DRAFT TO REWRITE" in prompt:
+            return (
+                "Subject: Appointment Confirmation\n\n"
+                "Hello,\n\n"
+                "We are confirming your appointment date is Not provided.\n\n"
                 "Best regards,\nSiligent Dental Provider Team"
             )
         return super().generate(prompt, **_)
@@ -224,6 +248,74 @@ class ApiTests(_ApiTestBase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["code"], "PAYER_REFERENCE_INVALID_NAME")
 
+    def test_insurance_generation_returns_coverage_verdict(self) -> None:
+        response = self.client.post(
+            "/api/insurance-verification/generate",
+            json={
+                "payer_name": "Delta Dental",
+                "member_id": "123",
+                "group_number": "",
+                "patient_dob": "1990-01-01",
+                "plan_type": "PPO",
+                "requested_procedure": "Exam",
+                "requested_condition": "Preventive visit",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn(payload["summary"]["coverage_verdict"], ["Covered", "Needs manual review"])
+        self.assertEqual(payload["summary"]["requested_procedure"], "Exam")
+
+    def test_dentrix_template_field_resolution(self) -> None:
+        response = self.client.post(
+            "/api/dentrix/resolve-template-fields",
+            json={
+                "template_type": "denial_letter",
+                "claim": {
+                    "claimid": "C-1001",
+                    "dateofclaim": "2026-05-01",
+                    "patid": "P-10",
+                    "insid": "INS-9",
+                    "provid": "DR-7",
+                },
+                "claimadjreason": [
+                    {
+                        "claimadjgroup": "CO",
+                        "claimadjreason": "Not covered under plan",
+                        "claimadjamount": "125.00",
+                    }
+                ],
+                "clinicalnote": [{"notetext": "Patient completed required documentation."}],
+                "master_refs": {
+                    "patient_master": {
+                        "P-10": {
+                            "id": "P-10",
+                            "full_name": "Jane Doe",
+                            "dob": "1990-01-02",
+                        }
+                    },
+                    "payer_master": {
+                        "INS-9": {
+                            "id": "INS-9",
+                            "name": "Delta Dental",
+                            "address": "PO Box 1000",
+                        }
+                    },
+                    "provider_master": {
+                        "DR-7": {"id": "DR-7", "name": "Dr. Smith", "npi": "1234567890"}
+                    },
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["can_generate"])
+        self.assertEqual(payload["template_type"], "denial_letter")
+        self.assertEqual(payload["resolved_fields"]["claim_or_reference"], "C-1001")
+        self.assertEqual(payload["resolved_fields"]["patient_name"], "Jane Doe")
+        self.assertEqual(payload["resolved_fields"]["payer_name"], "Delta Dental")
+        self.assertEqual(payload["missing_required_fields"], [])
+
     def test_document_pipeline_invalid_upload_does_not_persist_files(self) -> None:
         upload_dir = self.data_dir / "uploads"
         index_path = self.data_dir / "uploads_index.json"
@@ -326,6 +418,41 @@ class ApiTests(_ApiTestBase):
         self.assertEqual(payload["selected_model"], "gemma:7b")
         self.assertIn("2026-05-02", payload["draft"])
         self.assertIn("appointment_date", payload["template_placeholders"])
+
+    def test_email_thread_uses_extracted_entities_for_template_fields(self) -> None:
+        save_resp = self.client.post(
+            "/api/templates",
+            json={
+                "name": "Appointment Reply",
+                "type": "appointment_confirmation",
+                "content": "Appointment reply for {{patient_name}} on {{appointment_date}}",
+            },
+        )
+        self.assertEqual(save_resp.status_code, 200)
+
+        response = self.client.post(
+            "/api/email-thread/generate",
+            data={
+                "thread_text": "Can you confirm my appointment? This is Jane Doe.",
+                "runtime_fields": json.dumps({"appointment_date": "2026-05-02"}),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["runtime_fields_used"]["patient_name"], "Jane Doe")
+        self.assertEqual(payload["runtime_fields_used"]["appointment_date"], "2026-05-02")
+        self.assertEqual(payload["missing_runtime_fields"], [])
+
+    def test_email_thread_never_returns_not_provided_in_draft(self) -> None:
+        api_main.ollama_client = _FakeOllamaEmailNotProvided()
+        response = self.client.post(
+            "/api/email-thread/generate",
+            data={"thread_text": "Can you confirm my appointment?"},
+        )
+        self.assertEqual(response.status_code, 200)
+        draft = response.json()["draft"]
+        self.assertNotIn("Not provided", draft)
+        self.assertIn("appointment date", draft)
 
     def test_email_thread_requires_text_or_file(self) -> None:
         response = self.client.post("/api/email-thread/generate", data={})

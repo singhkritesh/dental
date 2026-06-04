@@ -4,8 +4,10 @@ import unittest
 
 from services.document_pipeline import (
     MAX_IMAGE_BYTES_FOR_LLM,
+    PreparedDocument,
     _is_draft_structurally_valid,
     _is_summary_bullet_draft,
+    build_document_generation_context,
     extract_document_content,
     extract_text_from_payload,
     stabilize_structured_output,
@@ -99,6 +101,30 @@ class DocumentPipelineTests(unittest.TestCase):
             ]
         )
         self.assertTrue(_is_draft_structurally_valid(template_type="email", final_draft=valid_email))
+
+    def test_build_document_generation_context_separates_runtime_and_sources(self) -> None:
+        context = build_document_generation_context(
+            documents=[
+                PreparedDocument(
+                    upload_id="u1",
+                    original_name="eob.txt",
+                    content_type="text/plain",
+                    size_bytes=25,
+                    extension=".txt",
+                    extracted_text="Claim was denied for missing narrative.",
+                    image_base64_list=[],
+                )
+            ],
+            runtime_fields={"patient_name": "Jane Doe", "claim_id": "CLM-1"},
+            selected_template_type="denial_letter",
+            selected_template_name="Denial Appeal",
+        )
+        self.assertIn("[Structured Generation Context JSON]", context)
+        self.assertIn('"selected_template_type": "denial_letter"', context)
+        self.assertIn('"trusted_runtime_fields"', context)
+        self.assertIn('"patient_name": "Jane Doe"', context)
+        self.assertIn('"source_documents"', context)
+        self.assertIn("Claim was denied for missing narrative.", context)
 
 
 if __name__ == "__main__":

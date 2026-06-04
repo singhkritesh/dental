@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from services.document_pipeline import _score_similarity, _tokenize
-from services.email_guardrails import generate_with_guardrails
+from services.email_guardrails import generate_with_guardrails, has_missing_data_markers
 from services.prompt_registry import resolve_email_thread_prompt
 from services.prompt_engine import compose_prompt
-from services.template_runtime import runtime_fields_to_context_block
+from services.template_runtime import runtime_fields_to_json_context
 from services.verification import extract_json_object
 
 MAX_THREAD_CHARS = 18_000
@@ -75,10 +75,15 @@ def build_email_thread_context(
     runtime_fields: Mapping[str, str] | None = None,
 ) -> str:
     cleaned_thread = normalize_email_thread(thread_text)
-    runtime_block = runtime_fields_to_context_block(runtime_fields)
-    if runtime_block:
-        return f"{cleaned_thread}\n\n{runtime_block}"
-    return cleaned_thread
+    runtime_json = runtime_fields_to_json_context(runtime_fields)
+    if runtime_json:
+        return (
+            "[Email Thread Text]\n"
+            f"{cleaned_thread}\n\n"
+            "[Structured Runtime Context JSON]\n"
+            f"{runtime_json}"
+        )
+    return f"[Email Thread Text]\n{cleaned_thread}"
 
 
 def _normalize_intent(raw_value: str) -> str:
@@ -280,7 +285,7 @@ def generate_email_thread_reply(
             "analysis_json": json.dumps(analysis.__dict__, ensure_ascii=False),
             "thread_context": thread_context,
             "template_content": template_content[:3000] or "No selected template.",
-            "runtime_context": runtime_fields_to_context_block(runtime_fields) or "No runtime patient data provided.",
+            "runtime_context": runtime_fields_to_json_context(runtime_fields) or "No runtime patient/account data supplied.",
         },
     )
     return generate_with_guardrails(
@@ -289,4 +294,40 @@ def generate_email_thread_reply(
         model_name=model_name,
         purpose_label=analysis.intent,
         images=images,
+        rewrite_attempts=2,
+    )
+
+
+def build_missing_details_followup_email(
+    *,
+    analysis: EmailThreadAnalysis,
+    runtime_fields: Mapping[str, str] | None = None,
+) -> str:
+    missing = [item for item in analysis.missing_fields if str(item).strip()]
+    if not missing:
+        missing = ["the details needed to complete your request"]
+    missing_lines = "\n".join(f"- {item.replace('_', ' ')}" for item in missing[:6])
+    return (
+        f"Subject: Follow-up on your request\n\n"
+        "Hello,\n\n"
+        "Thank you for reaching out to Siligent Dental. We can help with your request, "
+        "but we need a little more information before we can complete it accurately.\n\n"
+        f"Please send the following:\n{missing_lines}\n\n"
+        "Once we receive those details, we will review and follow up with the next step.\n\n"
+        "Best regards,\n"
+        "Siligent Dental Provider Team"
+    )
+
+
+def ensure_email_reply_has_no_missing_markers(
+    *,
+    draft: str,
+    analysis: EmailThreadAnalysis,
+    runtime_fields: Mapping[str, str] | None = None,
+) -> str:
+    if not has_missing_data_markers(draft):
+        return draft
+    return build_missing_details_followup_email(
+        analysis=analysis,
+        runtime_fields=runtime_fields,
     )

@@ -15,6 +15,8 @@ recommended_action: one sentence describing what staff should do with the draft
 
 Rules:
 - Do not invent facts.
+- If Structured Runtime Context JSON is present, use trusted_runtime_fields as authoritative patient/account facts.
+- Keep trusted runtime data separate from quoted email text when deciding latest inbound intent.
 - If a value is not present, omit it from extracted_entities and add it to missing_fields only if required for a safe response.
 - Use clinical_review if symptoms, medication, pain, swelling, bleeding, or medical advice appear.
 - Use service_escalation for complaints, threats, anger, or refund disputes.

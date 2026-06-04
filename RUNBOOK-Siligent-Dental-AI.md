@@ -1,5 +1,5 @@
 ---
-last_updated: "2026-05-26"
+last_updated: "2026-05-31"
 stack: "Python 3.11+ · Ollama (local) · FastAPI · React · PostgreSQL/pgvector + local uploads"
 status: "Draft"
 ---
@@ -34,8 +34,12 @@ Use this snapshot as the source of truth for current operations:
 - Some legacy command examples below still reference `gemma:*`; treat those as historical and substitute your active model (default `qwen3.5:4b`).
 - Canonical template model is enforced: one template per purpose type globally.
 - API startup auto-seeds missing default shared templates per purpose type.
-- Smart Composer supports optional uploads; template/runtime-only generation is valid.
+- Active product focus is insurance verification, denial letters, and email exchange.
+- Shared composer internals support denial letters and email exchange; template/runtime-only generation is valid.
 - Email thread workflow is manual-only (paste/upload thread content). Mailbox-native sync and real-time inbox listeners are not active in current runtime.
+- Dentrix claim mapping endpoint is active:
+  - `POST /api/dentrix/resolve-template-fields`
+  - Supports `denial_letter`, `rebuttal_letter`, and `insurance_verification` field resolution from claim-domain payloads.
 
 When this runbook contains legacy Streamlit/file-only instructions, prefer this snapshot and current repository scripts.
 
@@ -348,9 +352,9 @@ git checkout <commit-hash>    # Roll back
 ### Post-Deploy Verification
 
 1. Open the app in browser
-2. Generate one denial letter (CO-45, test data)
-3. Generate one insurance verification (any payer with reference data)
-4. Generate one email (appointment reminder)
+2. Generate one insurance verification (any payer with reference data)
+3. Generate one denial letter (CO-45, test data)
+4. Generate one email exchange reply from pasted thread text
 5. Save a template, refresh, verify it persists
 6. Confirm all three features complete without errors
 
@@ -755,6 +759,42 @@ Not formally defined. For a PoC with < 100 templates and 3 payer reference files
 3. Restart the app.
 4. Test: generate a letter with the new code and verify output quality.
 
+### Validate Dentrix claim mapping before generation
+
+Use this to resolve required template fields from claim-domain records and detect missing inputs early.
+
+```bash
+curl -s http://localhost:8000/api/dentrix/resolve-template-fields \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_type": "denial_letter",
+    "claim": {
+      "claimid": "CLM-1001",
+      "dateofclaim": "2026-05-01",
+      "patid": "PAT-123",
+      "insid": "INS-9",
+      "provid": "PROV-7"
+    },
+    "claimadjreason": [
+      {
+        "claimid": "CLM-1001",
+        "claimadjgroup": "CO",
+        "claimadjreason": "Coverage limit reached",
+        "claimadjamount": "30.00"
+      }
+    ],
+    "master_refs": {
+      "patient_master": {"PAT-123": {"id": "PAT-123", "full_name": "Jane Doe", "dob": "1990-01-02"}},
+      "payer_master": {"INS-9": {"id": "INS-9", "name": "Delta Dental", "address": "PO Box 1000"}},
+      "provider_master": {"PROV-7": {"id": "PROV-7", "name": "Dr. Smith", "npi": "1234567890"}}
+    }
+  }' | python3 -m json.tool
+```
+
+Expected:
+- `can_generate=true` when required fields are resolvable.
+- `missing_required_fields` lists blockers if required values are unavailable.
+
 ### Debug a prompt that produces poor output
 
 1. Test the prompt directly with Ollama (bypass the app):
@@ -822,9 +862,9 @@ A new developer completing this checklist should have a running local environmen
 - [ ] Data directories exist: `data/payer_references/` has at least one payer file, `data/templates.json` exists
 - [ ] Prompt templates exist: all 10 denial code files + verification prompt + 8 email prompts
 - [ ] App starts without errors (Streamlit on :8501 or Backend on :8000 + React on :3000)
-- [ ] Can generate a denial letter (CO-45 with test data) — letter appears within 30 seconds
 - [ ] Can run insurance verification (any payer with reference data) — summary appears
-- [ ] Can generate an email (appointment reminder) — draft appears
+- [ ] Can generate a denial letter (CO-45 with test data) — letter appears within 30 seconds
+- [ ] Can generate an email exchange reply from pasted thread text — draft appears
 - [ ] Can save a template, refresh the page, and see it in the template list
 - [ ] Read PRD §1–6 (problem, personas, scope, functional requirements)
 - [ ] Read TRD §9 (AI coding guardrails) — **before writing any code**

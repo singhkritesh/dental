@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import date
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import (
@@ -23,6 +25,8 @@ from api.schemas import (
     AuditEventsResponse,
     AuthBootstrapResponse,
     AuthTokenResponse,
+    DentrixTemplateFieldResolveRequest,
+    DentrixTemplateFieldResolveResponse,
     FieldDictionaryDeleteResponse,
     FieldDictionaryEntry,
     FieldDictionaryResponse,
@@ -59,15 +63,18 @@ from services.document_pipeline import (
     ExtractedDocumentContent,
     PreparedDocument,
     build_document_context,
+    build_document_generation_context,
     detect_template_type_with_model,
     extract_document_content,
     generate_structured_output,
     heuristic_detect_template_type,
     recommend_templates,
 )
+from services.dentrix_mapping import resolve_dentrix_template_fields
 from services.email_thread import (
     analyze_email_thread_with_model,
     build_email_thread_context,
+    ensure_email_reply_has_no_missing_markers,
     generate_email_thread_reply,
     recommend_email_templates,
 )
@@ -86,9 +93,10 @@ from services.postgres_store import PostgresStores, create_postgres_stores
 from services.prompt_registry import list_email_scenarios
 from services.template_store import TemplateStore
 from services.template_runtime import (
+    expand_runtime_field_aliases,
     normalize_runtime_fields,
     render_template_with_runtime_fields,
-    runtime_fields_to_context_block,
+    runtime_fields_to_json_context,
 )
 from services.template_type_store import TemplateTypeStore, normalize_template_type
 from services.upload_store import UploadStore
@@ -431,6 +439,49 @@ def _parse_runtime_fields(raw: str | None) -> dict[str, object]:
     return {str(key): value for key, value in payload.items()}
 
 
+def _prepare_runtime_values(raw: str | None) -> dict[str, str]:
+    values = expand_runtime_field_aliases(normalize_runtime_fields(_parse_runtime_fields(raw)))
+    values.setdefault("today_date", date.today().isoformat())
+    denial_code = values.get("denial_code", "").strip().upper()
+    if denial_code:
+        values["denial_code"] = denial_code
+        matched = next(
+            (
+                item
+                for item in DENIAL_CODES
+                if str(item.get("code", "")).strip().upper() == denial_code
+            ),
+            None,
+        )
+        if matched and not values.get("denial_code_description", "").strip():
+            values["denial_code_description"] = str(matched.get("description", "")).strip()
+        if matched and not values.get("denial_reason", "").strip():
+            values["denial_reason"] = str(matched.get("description", "")).strip()
+    return values
+
+
+def _merge_extracted_runtime_values(
+    runtime_values: dict[str, str],
+    extracted_entities: dict[str, str],
+) -> dict[str, str]:
+    merged = dict(runtime_values)
+    normalized_entities = expand_runtime_field_aliases(normalize_runtime_fields(extracted_entities))
+    for key, value in normalized_entities.items():
+        if not str(value).strip():
+            continue
+        if not str(merged.get(key, "")).strip():
+            merged[key] = value
+    return merged
+
+
+def _resolve_dentrix_spec_path() -> Path:
+    primary = settings.root_dir / "docs" / "DENTRIX_FIELD_MAPPING_SPEC.json"
+    if primary.exists():
+        return primary
+    fallback = Path(__file__).resolve().parent.parent / "docs" / "DENTRIX_FIELD_MAPPING_SPEC.json"
+    return fallback
+
+
 def register_routes(app: FastAPI) -> None:
     @app.get("/")
     async def root() -> dict[str, str]:
@@ -713,7 +764,7 @@ def register_routes(app: FastAPI) -> None:
         runtime_fields: str | None = Form(default=None),
     ) -> EmailThreadGenerateResponse:
         selected_model = _resolve_model_for_use_case("email_thread", model_name)
-        runtime_values = normalize_runtime_fields(_parse_runtime_fields(runtime_fields))
+        runtime_values = _prepare_runtime_values(runtime_fields)
         uploaded_files = files or []
         if len(uploaded_files) > 3:
             raise AppError(
@@ -779,6 +830,10 @@ def register_routes(app: FastAPI) -> None:
             thread_text=raw_thread_text,
             runtime_fields=runtime_values,
             images=images,
+        )
+        runtime_values = _merge_extracted_runtime_values(
+            runtime_values,
+            analysis.extracted_entities,
         )
         thread_context = build_email_thread_context(
             thread_text=raw_thread_text,
@@ -847,6 +902,11 @@ def register_routes(app: FastAPI) -> None:
             set(missing_runtime_fields) | set(rendered_draft.missing)
         )
         runtime_fields_used = {**runtime_fields_used, **rendered_draft.used}
+        draft = ensure_email_reply_has_no_missing_markers(
+            draft=draft,
+            analysis=analysis,
+            runtime_fields=runtime_values,
+        )
         trusted_runtime_pairs = [
             f"{key}: {value}" for key, value in runtime_values.items() if str(value).strip()
         ]
@@ -929,6 +989,8 @@ def register_routes(app: FastAPI) -> None:
                 "group_number": payload.group_number or "",
                 "patient_dob": payload.patient_dob.isoformat(),
                 "plan_type": payload.plan_type or "Not provided",
+                "requested_procedure": payload.requested_procedure or "Not provided",
+                "requested_condition": payload.requested_condition or "Not provided",
             },
         )
         audit_store.log(
@@ -937,6 +999,41 @@ def register_routes(app: FastAPI) -> None:
             details={"payer_name": payload.payer_name, "model": model_name},
         )
         return InsuranceVerificationResponse(summary=summary, raw_text=raw_text)
+
+    @app.post(
+        "/api/dentrix/resolve-template-fields",
+        response_model=DentrixTemplateFieldResolveResponse,
+        responses={400: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    )
+    async def resolve_dentrix_template_fields_route(
+        payload: DentrixTemplateFieldResolveRequest,
+        current_user: AuthUser = Depends(require_current_user),
+    ) -> DentrixTemplateFieldResolveResponse:
+        resolution = resolve_dentrix_template_fields(
+            template_type=payload.template_type,
+            claim=payload.claim,
+            claiminfo=payload.claiminfo,
+            claimadjreason=payload.claimadjreason,
+            claimstatusnotelink=payload.claimstatusnotelink,
+            clinicalnote=payload.clinicalnote,
+            master_refs=payload.master_refs,
+            spec_path=_resolve_dentrix_spec_path(),
+        )
+        audit_store.log(
+            actor_id=current_user.id,
+            action="dentrix.resolve_template_fields",
+            details={
+                "template_type": resolution.template_type,
+                "missing_required_count": len(resolution.missing_required_fields),
+            },
+        )
+        return DentrixTemplateFieldResolveResponse(
+            template_type=resolution.template_type,
+            can_generate=resolution.can_generate,
+            resolved_fields=resolution.resolved_fields,
+            missing_required_fields=resolution.missing_required_fields,
+            missing_optional_fields=resolution.missing_optional_fields,
+        )
 
     @app.post(
         "/api/templates/generate-draft",
@@ -1050,7 +1147,7 @@ def register_routes(app: FastAPI) -> None:
                 status_code=400,
             )
         selected_model = _resolve_model_for_use_case("document_ingestion", model_name)
-        runtime_values = normalize_runtime_fields(_parse_runtime_fields(runtime_fields))
+        runtime_values = _prepare_runtime_values(runtime_fields)
         manual_template_type: str | None = None
         if requested_template_type and requested_template_type.strip():
             manual_template_type = _resolve_template_type_for_actor(
@@ -1098,10 +1195,11 @@ def register_routes(app: FastAPI) -> None:
             )
 
         available_types = template_type_store.list_types()
-        context_text = build_document_context(prepared)
-        runtime_context_block = runtime_fields_to_context_block(runtime_values)
-        if runtime_context_block:
-            context_text = f"{context_text}\n\n{runtime_context_block}"
+        plain_context_text = build_document_context(prepared)
+        detection_context_text = plain_context_text
+        runtime_detection_context = runtime_fields_to_json_context(runtime_values)
+        if runtime_detection_context:
+            detection_context_text = f"{detection_context_text}\n\n{runtime_detection_context}".strip()
 
         if not prepared and not selected_template and not manual_template_type and not runtime_values:
             raise AppError(
@@ -1124,7 +1222,7 @@ def register_routes(app: FastAPI) -> None:
             detection_rationale = "Detected from selected template in template-only mode."
         elif not prepared:
             detected_template_type, detection_confidence, detection_rationale = (
-                heuristic_detect_template_type(context_text, available_types)
+                heuristic_detect_template_type(detection_context_text, available_types)
             )
         else:
             detected_template_type, detection_confidence, detection_rationale = (
@@ -1136,6 +1234,13 @@ def register_routes(app: FastAPI) -> None:
                     documents=prepared,
                 )
             )
+
+        context_text = build_document_generation_context(
+            documents=prepared,
+            runtime_fields=runtime_values,
+            selected_template_type=detected_template_type,
+            selected_template_name=str(selected_template.get("name", "")) if selected_template else None,
+        )
 
         recommendations = recommend_templates(
             templates=templates,

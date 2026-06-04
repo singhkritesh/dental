@@ -2,10 +2,10 @@ Payer: Aetna Dental
 Plan Snapshot (sample reference):
 - Preventive and diagnostic: covered at 100%
 - Basic services: covered at 80%
+- Endodontic services, including root canal therapy (RCT): covered at 80% after deductible
 - Major services: covered at 50%
 - Annual maximum: $1,000
 - Deductible: applies to basic and major services only
 - Prior authorization: required for periodontal surgery in this sample plan
 - Waiting period: none for preventive, 12 months for major
 - Exclusions/limitations: replacement of crowns limited to once every 7 years
-

@@ -3,8 +3,7 @@
 Production-oriented local AI platform for dental front desk workflows:
 - Insurance denial letter generation
 - Insurance verification from payer references
-- Email drafting with template library
-- Conversation-aware email thread replies
+- Email exchange replies from pasted/uploaded thread context
 - Multi-document smart template composer (up to 3 files, including image/PDF/DOCX/text)
 - Local model routing (global or per use-case)
 - Multi-user authentication and audit events
@@ -13,6 +12,7 @@ Production-oriented local AI platform for dental front desk workflows:
 - Server-side factual grounding guardrails for high-risk values (dates/times/IDs/phones/currency/email)
 
 Current scope note:
+- Current product focus is insurance verification, denial letters, and email exchange.
 - Mailbox-native thread sync (Gmail/Outlook/Exchange), real-time inbox monitoring, and live suggestion push are not implemented yet. Current email-thread workflow is manual input/upload based.
 
 ## Email Exchange Capability Matrix (Current vs Planned)
@@ -47,6 +47,27 @@ Implementation path:
 - Storage/auth reality:
   - PostgreSQL + pgvector is primary runtime persistence.
   - Multi-user auth is enabled by default (`admin` and `staff` roles).
+- Dentrix claim mapping support:
+  - `POST /api/dentrix/resolve-template-fields` resolves template fields from claim-domain payloads.
+  - Supported template types: `denial_letter`, `rebuttal_letter`, `insurance_verification`.
+  - Resolver enforces claim scoping so unrelated claim rows are excluded.
+
+## Dentrix Field Mapping Endpoint
+
+Mapping spec location:
+- `docs/DENTRIX_FIELD_MAPPING_SPEC.json`
+
+Endpoint:
+- `POST /api/dentrix/resolve-template-fields`
+
+Response contract:
+- `template_type`
+- `can_generate`
+- `resolved_fields`
+- `missing_required_fields`
+- `missing_optional_fields`
+
+Use this endpoint as a pre-generation resolver. If `can_generate=false`, collect missing required fields before calling generation endpoints.
 
 ## Recommended Production Stack
 
@@ -159,6 +180,7 @@ The migration is idempotent and safe to re-run.
 - `POST /api/emails/generate`
 - `POST /api/email-thread/generate`
 - `POST /api/insurance-verification/generate`
+- `POST /api/dentrix/resolve-template-fields`
 - `POST /api/document-pipeline/generate`
 - `GET /api/templates`
 - `POST /api/templates`

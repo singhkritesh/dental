@@ -8,6 +8,11 @@ export function verificationSummaryToText(summary: InsuranceVerificationSummary)
   return [
     "Insurance Verification Summary",
     "",
+    `Coverage Verdict: ${summary.coverage_verdict}`,
+    `Verdict Rationale: ${summary.verdict_rationale}`,
+    `Requested Procedure: ${summary.requested_procedure}`,
+    `Requested Condition: ${summary.requested_condition}`,
+    "",
     "Covered Procedures:",
     covered,
     "",
@@ -18,4 +23,3 @@ export function verificationSummaryToText(summary: InsuranceVerificationSummary)
     `Notable Exclusions/Limitations: ${summary.notable_exclusions_limitations}`
   ].join("\n");
 }
-

@@ -59,6 +59,10 @@ VERIFICATION_REQUIRED_FIELDS: tuple[str, ...] = (
 PLAN_TYPES: tuple[str, ...] = ("PPO", "HMO", "DHMO", "Indemnity", "Other")
 
 VERIFICATION_FIELDS: tuple[str, ...] = (
+    "coverage_verdict",
+    "verdict_rationale",
+    "requested_procedure",
+    "requested_condition",
     "covered_procedures",
     "estimated_copay",
     "prior_authorization_required",

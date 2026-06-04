@@ -85,10 +85,16 @@ class InsuranceVerificationRequest(BaseModel):
     group_number: str | None = None
     patient_dob: date
     plan_type: str | None = None
+    requested_procedure: str | None = None
+    requested_condition: str | None = None
     model_name: str | None = None
 
 
 class InsuranceVerificationSummary(BaseModel):
+    coverage_verdict: str
+    verdict_rationale: str
+    requested_procedure: str
+    requested_condition: str
     covered_procedures: list[str]
     estimated_copay: str
     prior_authorization_required: str
@@ -100,6 +106,29 @@ class InsuranceVerificationSummary(BaseModel):
 class InsuranceVerificationResponse(BaseModel):
     summary: InsuranceVerificationSummary
     raw_text: str
+
+
+class DentrixTemplateFieldResolveRequest(BaseModel):
+    template_type: str = Field(min_length=1, max_length=80)
+    claim: dict[str, Any]
+    claiminfo: dict[str, Any] | None = None
+    claimadjreason: list[dict[str, Any]] | None = None
+    claimstatusnotelink: list[dict[str, Any]] | None = None
+    clinicalnote: list[dict[str, Any]] | None = None
+    master_refs: dict[str, Any] | None = None
+
+    @field_validator("template_type")
+    @classmethod
+    def normalize_template_type(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class DentrixTemplateFieldResolveResponse(BaseModel):
+    template_type: str
+    can_generate: bool
+    resolved_fields: dict[str, str]
+    missing_required_fields: list[str] = Field(default_factory=list)
+    missing_optional_fields: list[str] = Field(default_factory=list)
 
 
 class TemplateItem(BaseModel):

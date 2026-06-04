@@ -7,18 +7,30 @@ If information is missing, return "Not available" for that field.
 Do not invent benefits, exclusions, or percentages.
 Only include covered procedures that are explicitly present in payer reference context text.
 If a covered procedure is not explicitly present, do not include it.
+For coverage_verdict, decide whether the requested procedure/condition is covered by this policy reference.
+Use exactly one of: "Covered", "Not covered", "Needs manual review".
+Use "Needs manual review" when the requested procedure or condition is absent, ambiguous, or not explicit in payer reference context.
 
 Payer Name: {payer_name}
 Member ID: {member_id}
 Group Number: {group_number}
 Patient DOB: {patient_dob}
 Plan Type: {plan_type}
+Requested Procedure/Service: {requested_procedure}
+Requested Condition/Diagnosis: {requested_condition}
+
+Structured verification input JSON:
+{verification_context_json}
 
 Payer reference context:
 {payer_reference_text}
 
 Return ONLY one valid JSON object with exactly these keys:
 {{
+  "coverage_verdict": "Covered | Not covered | Needs manual review",
+  "verdict_rationale": "...",
+  "requested_procedure": "{requested_procedure}",
+  "requested_condition": "{requested_condition}",
   "covered_procedures": ["..."],
   "estimated_copay": "...",
   "prior_authorization_required": "...",

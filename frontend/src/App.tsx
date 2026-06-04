@@ -11,41 +11,23 @@ import { SmartComposerPage } from "./pages/SmartComposerPage";
 import { SystemHealthPage } from "./pages/SystemHealthPage";
 import { TemplateLibraryPage } from "./pages/TemplateLibraryPage";
 
-function LegacyToComposerRedirect({
-  mode = "new_draft",
-  templateType,
-}: {
-  mode?: "new_draft" | "thread";
-  templateType?: string;
-}) {
-  const params = new URLSearchParams();
-  if (mode === "thread") {
-    params.set("mode", "thread");
-  }
-  if (templateType) {
-    params.set("templateType", templateType);
-  }
-  const query = params.toString();
-  return <Navigate to={`/smart-composer${query ? `?${query}` : ""}`} replace />;
-}
-
 function AppRoutes({ canAccessAdmin }: { canAccessAdmin: boolean }) {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/smart-composer" replace />} />
+      <Route path="/" element={<Navigate to="/insurance-verification" replace />} />
       <Route path="/smart-composer" element={<SmartComposerPage />} />
-      <Route path="/email-thread" element={<LegacyToComposerRedirect mode="thread" />} />
-      <Route path="/denial-letters" element={<LegacyToComposerRedirect templateType="denial_letter" />} />
+      <Route path="/email-thread" element={<SmartComposerPage />} />
+      <Route path="/denial-letters" element={<SmartComposerPage />} />
       <Route path="/insurance-verification" element={<InsuranceVerificationPage />} />
-      <Route path="/email-drafting" element={<LegacyToComposerRedirect templateType="email" />} />
+      <Route path="/email-drafting" element={<SmartComposerPage />} />
       <Route path="/template-library" element={<TemplateLibraryPage />} />
       <Route
         path="/model-settings"
-        element={canAccessAdmin ? <ModelSettingsPage /> : <Navigate to="/smart-composer" replace />}
+        element={canAccessAdmin ? <ModelSettingsPage /> : <Navigate to="/insurance-verification" replace />}
       />
       <Route
         path="/system-health"
-        element={canAccessAdmin ? <SystemHealthPage /> : <Navigate to="/smart-composer" replace />}
+        element={canAccessAdmin ? <SystemHealthPage /> : <Navigate to="/insurance-verification" replace />}
       />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
