@@ -76,9 +76,6 @@ Use this endpoint as a pre-generation resolver. If `can_generate=false`, collect
 - Persistence: PostgreSQL + pgvector (primary), local filesystem for uploaded binary files
 - Frontend: React + TypeScript + Vite SPA (`frontend/`)
 
-Legacy local UI:
-- Streamlit app remains available in `app.py` for internal/local use.
-
 ## Quick Start (FastAPI)
 
 1. Create and activate virtual environment.
@@ -145,17 +142,6 @@ Legacy local UI:
 Notes:
 - Scripts are Docker Compose wrappers and control `frontend` + `api` + `db` containers in `docker-compose.yml`.
 - Extra arguments are passed through to compose commands (example: `./start.sh --no-build`).
-
-## One-Time Data Migration (File Store -> Postgres)
-
-When upgrading from file-based runtime storage, migrate existing data (`users/sessions/templates/template_types/model_preferences/uploads/audit`) into Postgres:
-
-- Preferred (containerized runtime):
-  - `docker compose exec -T api python scripts/migrate_file_store_to_postgres.py`
-- Alternate (local Python runtime with dependencies installed):
-  - `python3 scripts/migrate_file_store_to_postgres.py`
-
-The migration is idempotent and safe to re-run.
 
 ## API Endpoints
 
@@ -252,7 +238,3 @@ Insurance verification has additional grounding:
   - live UI updates via SSE/WebSocket
 - Guarded send-assist workflow:
   - human review and approve/reject before any outbound action
-
-## Legacy Streamlit Run
-
-- `streamlit run app.py --server.port 8501`
