@@ -454,6 +454,28 @@ class ApiTests(_ApiTestBase):
         self.assertNotIn("Not provided", draft)
         self.assertIn("appointment date", draft)
 
+    def test_email_thread_requested_intent_alias_does_not_block_generation(self) -> None:
+        response = self.client.post(
+            "/api/email-thread/generate",
+            data={
+                "thread_text": "Can you check whether my insurance is on file?",
+                "requested_intent": "insurance_verification",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["analysis"]["intent"], "insurance_update")
+
+    def test_email_thread_unknown_requested_intent_falls_back_to_detection(self) -> None:
+        response = self.client.post(
+            "/api/email-thread/generate",
+            data={
+                "thread_text": "Can you confirm my appointment?",
+                "requested_intent": "custom_saved_template_type",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["analysis"]["intent"], "appointment_confirmation")
+
     def test_email_thread_requires_text_or_file(self) -> None:
         response = self.client.post("/api/email-thread/generate", data={})
         self.assertEqual(response.status_code, 400)

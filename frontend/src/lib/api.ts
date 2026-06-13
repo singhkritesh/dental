@@ -226,6 +226,7 @@ export const api = {
   generateEmailThread(payload: {
     thread_text?: string;
     files?: File[];
+    requested_intent?: string;
     selected_template_index?: number;
     model_name?: string;
     runtime_fields?: Record<string, unknown>;
@@ -236,6 +237,9 @@ export const api = {
     }
     for (const file of payload.files ?? []) {
       formData.append("files", file);
+    }
+    if (payload.requested_intent) {
+      formData.append("requested_intent", payload.requested_intent);
     }
     if (payload.selected_template_index !== undefined) {
       formData.append("selected_template_index", String(payload.selected_template_index));

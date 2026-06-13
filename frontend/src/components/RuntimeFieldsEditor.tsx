@@ -4,6 +4,8 @@ type RuntimeFieldsEditorProps = {
   values: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
   suggestedKeys?: string[];
+  requiredKeys?: string[];
+  requiredLabel?: string;
   title?: string;
   helperText?: string;
 };
@@ -29,6 +31,8 @@ export function RuntimeFieldsEditor({
   values,
   onChange,
   suggestedKeys = [],
+  requiredKeys = [],
+  requiredLabel = "Needs input",
   title = "Patient and case details",
   helperText = "Fill in known details. You can add more fields if needed.",
 }: RuntimeFieldsEditorProps) {
@@ -38,6 +42,10 @@ export function RuntimeFieldsEditor({
   const suggestedSet = useMemo(
     () => new Set(suggestedKeys.map((item) => item.trim()).filter(Boolean)),
     [suggestedKeys]
+  );
+  const requiredSet = useMemo(
+    () => new Set(requiredKeys.map((item) => item.trim()).filter(Boolean)),
+    [requiredKeys]
   );
 
   const orderedKeys = useMemo(() => {
@@ -78,9 +86,10 @@ export function RuntimeFieldsEditor({
       {orderedKeys.length > 0 ? (
         <div className="runtime-fields-grid">
           {orderedKeys.map((key) => (
-            <div className="runtime-field-row" key={key}>
+            <div className={`runtime-field-row${requiredSet.has(key) ? " required" : ""}`} key={key}>
               <label>
                 {toFriendlyLabel(key)}
+                {requiredSet.has(key) ? <span className="required-pill">{requiredLabel}</span> : null}
                 <input
                   value={values[key] ?? ""}
                   onChange={(event) => updateKeyValue(key, event.target.value)}

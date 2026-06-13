@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { Notice } from "../components/Notice";
 import { api } from "../lib/api";
@@ -20,7 +21,6 @@ export function ModelSettingsPage() {
   const isAdmin = isAdminContext(user, bootstrap);
   const [models, setModels] = useState<string[]>([]);
   const [templateTypes, setTemplateTypes] = useState<string[]>([]);
-  const [newTemplateType, setNewTemplateType] = useState("");
   const [preferences, setPreferences] = useState<ModelPreferences>({
     use_global_model_for_all: true,
     global_model: "",
@@ -36,7 +36,6 @@ export function ModelSettingsPage() {
   const [notice, setNotice] = useState<{ type: "error" | "success" | "info"; message: string } | null>(
     null
   );
-  const canAddTemplateType = Boolean(isAdmin && newTemplateType.trim());
   const canCreateUser = Boolean(
     isAdmin && newUserName.trim().length >= 3 && newUserPassword.length >= 8 && !creatingUser
   );
@@ -103,22 +102,6 @@ export function ModelSettingsPage() {
       setNotice({ type: "error", message });
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function onAddTemplateType() {
-    if (!newTemplateType.trim()) {
-      setNotice({ type: "error", message: "Template type name is required." });
-      return;
-    }
-    try {
-      const response = await api.addTemplateType(newTemplateType.trim());
-      setTemplateTypes(response.template_types);
-      setNewTemplateType("");
-      setNotice({ type: "success", message: "Template type added." });
-    } catch (error) {
-      const message = resolveErrorMessage(error, "Could not add template type.");
-      setNotice({ type: "error", message });
     }
   }
 
@@ -241,26 +224,21 @@ export function ModelSettingsPage() {
               >
                 {saving ? "Saving..." : "Save Model Settings"}
               </button>
+              <p className="helper">
+                Workflow pages may show an admin model override for a single run. These settings control the default
+                routing used across the app.
+              </p>
               {!isAdmin ? <p className="helper">Only admins can update model routing.</p> : null}
             </>
           ) : null}
         </div>
 
         <div className="panel">
-          <h2>Template Types</h2>
-          <p className="helper">Admins define approved use-case types that staff can use in generation flows.</p>
-
-          <div className="inline-actions">
-            <input
-              placeholder="e.g. prior_auth_request"
-              value={newTemplateType}
-              disabled={!isAdmin}
-              onChange={(event) => setNewTemplateType(event.target.value)}
-            />
-            <button className="secondary-btn" type="button" onClick={onAddTemplateType} disabled={!canAddTemplateType}>
-              Add Type
-            </button>
-          </div>
+          <h2>Purpose Types</h2>
+          <p className="helper">
+            Purpose types are created and edited from Template Library so each type remains tied to its canonical
+            template and fields.
+          </p>
 
           <div className="chips-wrap">
             {templateTypes.map((typeName) => (
@@ -269,6 +247,9 @@ export function ModelSettingsPage() {
               </span>
             ))}
           </div>
+          <Link className="secondary-btn" to="/template-library">
+            Manage templates and purpose types
+          </Link>
 
           {isAdmin ? (
             <>

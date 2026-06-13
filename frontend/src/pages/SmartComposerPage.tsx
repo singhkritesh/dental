@@ -70,22 +70,170 @@ const DENIAL_RUNTIME_FIELD_KEYS = [
   "provider_name",
   "provider_npi",
 ];
-const EMAIL_THREAD_RUNTIME_FIELD_KEYS = [
-  "patient_name",
-  "requester_name",
-  "date_of_birth",
-  "phone",
-  "email",
-  "payer_name",
-  "member_id",
-  "claim_id",
-  "appointment_date",
-  "appointment_time",
-  "provider_name",
-  "office_phone",
-  "office_email",
-  "next_step",
+const EMAIL_REPLY_PURPOSE_OPTIONS = [
+  "appointment_confirmation",
+  "insurance_update",
+  "billing_inquiry",
+  "records_request",
+  "post_treatment_followup",
+  "denial_followup",
+  "general_inquiry",
 ];
+
+const EMAIL_REPLY_PURPOSE_FIELD_KEYS: Record<string, string[]> = {
+  appointment_confirmation: [
+    "patient_name",
+    "requester_name",
+    "appointment_date",
+    "appointment_time",
+    "provider_name",
+    "office_phone",
+    "next_step",
+  ],
+  insurance_update: [
+    "patient_name",
+    "requester_name",
+    "payer_name",
+    "member_id",
+    "group_number",
+    "date_of_birth",
+    "office_phone",
+    "next_step",
+  ],
+  billing_inquiry: [
+    "patient_name",
+    "requester_name",
+    "account_or_invoice",
+    "balance_amount",
+    "payment_next_step",
+    "office_phone",
+    "next_step",
+  ],
+  records_request: [
+    "patient_name",
+    "requester_name",
+    "records_requested",
+    "release_form_status",
+    "delivery_method",
+    "office_email",
+    "next_step",
+  ],
+  post_treatment_followup: [
+    "patient_name",
+    "requester_name",
+    "procedure_description",
+    "symptoms_reported",
+    "provider_name",
+    "office_phone",
+    "next_step",
+  ],
+  denial_followup: [
+    "patient_name",
+    "requester_name",
+    "payer_name",
+    "claim_id",
+    "denial_code",
+    "denial_reason",
+    "next_step",
+  ],
+  general_inquiry: [
+    "patient_name",
+    "requester_name",
+    "topic",
+    "office_phone",
+    "office_email",
+    "next_step",
+  ],
+};
+
+const EMAIL_TEMPLATE_TYPE_TO_PURPOSE: Record<string, string> = {
+  email: "general_inquiry",
+  appointment_confirmation: "appointment_confirmation",
+  appointment_reminder: "appointment_confirmation",
+  appointment_confirmation_sms: "appointment_confirmation",
+  appointment_reminder_sms: "appointment_confirmation",
+  cancellation_confirmation: "appointment_confirmation",
+  insurance_update_request: "insurance_update",
+  insurance_verification: "insurance_update",
+  balance_due: "billing_inquiry",
+  balance_due_notice: "billing_inquiry",
+  referral_letter: "records_request",
+  records_request: "records_request",
+  new_patient_welcome: "general_inquiry",
+  post_treatment_followup: "post_treatment_followup",
+  denial_letter: "denial_followup",
+  rebuttal_letter: "denial_followup",
+};
+
+const EMAIL_PURPOSE_LABELS: Record<string, string> = {
+  appointment_confirmation: "Appointment confirmation or scheduling",
+  insurance_update: "Insurance update or claim details",
+  billing_inquiry: "Billing or balance question",
+  records_request: "Records or referral request",
+  post_treatment_followup: "Post-treatment follow-up",
+  denial_followup: "Denial or appeal follow-up",
+  general_inquiry: "General inquiry",
+};
+
+const EMAIL_TEMPLATE_PURPOSE_TAGS: Record<string, string[]> = {
+  appointment_confirmation: ["appointment", "schedule", "confirmation", "reminder", "cancellation"],
+  insurance_update: ["insurance", "payer", "coverage", "member", "claim"],
+  billing_inquiry: ["billing", "balance", "payment", "invoice"],
+  records_request: ["records", "referral", "release", "xray", "x-ray"],
+  post_treatment_followup: ["post", "treatment", "followup", "follow-up", "clinical"],
+  denial_followup: ["denial", "appeal", "claim", "rebuttal"],
+  general_inquiry: ["general", "inquiry", "email"],
+};
+
+const EMAIL_PURPOSE_ORDER = new Map(EMAIL_REPLY_PURPOSE_OPTIONS.map((item, index) => [item, index]));
+
+function labelFromPurpose(value: string): string {
+  return EMAIL_PURPOSE_LABELS[value] ?? value.replace(/[_-]+/g, " ");
+}
+
+function resolveEmailPurposeFromValue(rawValue: string | undefined): string | undefined {
+  const normalized = normalizeTemplateTypeInput(rawValue || "");
+  if (!normalized) {
+    return undefined;
+  }
+  if (EMAIL_REPLY_PURPOSE_OPTIONS.includes(normalized)) {
+    return normalized;
+  }
+  return EMAIL_TEMPLATE_TYPE_TO_PURPOSE[normalized];
+}
+
+function resolveEmailPurposeFromTemplate(template: TemplateItem | null): string | undefined {
+  if (!template) {
+    return undefined;
+  }
+  const direct = resolveEmailPurposeFromValue(template.type);
+  if (direct) {
+    return direct;
+  }
+  const searchable = `${template.type} ${template.name} ${(template.tags || []).join(" ")}`.toLowerCase();
+  for (const purpose of EMAIL_REPLY_PURPOSE_OPTIONS) {
+    const tags = EMAIL_TEMPLATE_PURPOSE_TAGS[purpose] || [];
+    if (tags.some((tag) => searchable.includes(tag))) {
+      return purpose;
+    }
+  }
+  return undefined;
+}
+
+function templateMatchesEmailPurpose(template: TemplateItem, purpose: string): boolean {
+  const resolved = resolveEmailPurposeFromTemplate(template);
+  if (resolved === purpose) {
+    return true;
+  }
+  const tags = EMAIL_TEMPLATE_PURPOSE_TAGS[purpose] || [];
+  const searchable = `${template.type} ${template.name} ${(template.tags || []).join(" ")}`.toLowerCase();
+  return tags.some((tag) => searchable.includes(tag));
+}
+
+function rankEmailTemplate(template: TemplateItem): number {
+  const purpose = resolveEmailPurposeFromTemplate(template) ?? "general_inquiry";
+  return EMAIL_PURPOSE_ORDER.get(purpose) ?? 999;
+}
 
 function normalizeTemplateTypeInput(value: string): string {
   return value
@@ -94,6 +242,26 @@ function normalizeTemplateTypeInput(value: string): string {
     .replace(/\s+/g, "_")
     .replace(/[^a-z0-9_-]/g, "")
     .replace(/^_+|_+$/g, "");
+}
+
+function normalizeRuntimeFieldKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_.-]/g, "")
+    .slice(0, 80);
+}
+
+function normalizeFieldKeyList(values: string[]): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = normalizeRuntimeFieldKey(value);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  }
+  return Array.from(unique);
 }
 
 function resolveModelForMode(
@@ -210,9 +378,11 @@ export function SmartComposerPage() {
     try {
       const parsed = JSON.parse(raw) as Partial<ComposerPersistedState>;
       const modeValue =
-        parsed.mode === "reply_thread" || parsed.mode === "new_draft"
-          ? parsed.mode
-          : initialMode;
+        location.pathname === "/email-thread"
+          ? "reply_thread"
+          : (parsed.mode === "reply_thread" || parsed.mode === "new_draft")
+            ? parsed.mode
+            : initialMode;
       setMode(modeValue);
       setThreadText(typeof parsed.threadText === "string" ? parsed.threadText : "");
       setPurposeMode(
@@ -252,7 +422,7 @@ export function SmartComposerPage() {
     } catch {
       window.sessionStorage.removeItem(COMPOSER_STATE_STORAGE_KEY);
     }
-  }, [initialMode]);
+  }, [initialMode, location.pathname]);
 
   useEffect(() => {
     const payload: ComposerPersistedState = {
@@ -440,10 +610,17 @@ export function SmartComposerPage() {
   const availableTemplatesForSelection = useMemo(() => {
     if (mode === "reply_thread") {
       const ranked = [...templates].sort((a, b) => {
-        const aEmail = a.type.includes("email") ? 1 : 0;
-        const bEmail = b.type.includes("email") ? 1 : 0;
-        return bEmail - aEmail;
+        const purposeDelta = rankEmailTemplate(a) - rankEmailTemplate(b);
+        if (purposeDelta !== 0) {
+          return purposeDelta;
+        }
+        const aEmail = a.type.includes("email") ? 0 : 1;
+        const bEmail = b.type.includes("email") ? 0 : 1;
+        return aEmail - bEmail;
       });
+      if (purposeMode === "existing" && requestedTemplateType.trim()) {
+        return ranked.filter((item) => templateMatchesEmailPurpose(item, requestedTemplateType.trim()));
+      }
       return ranked;
     }
     if (forcedTemplateType) {
@@ -468,6 +645,32 @@ export function SmartComposerPage() {
     return templates.find((item) => item.index === selectedTemplateIndex) ?? null;
   }, [selectedTemplateIndex, templates]);
 
+  const selectedEmailPurpose = useMemo(() => {
+    if (mode !== "reply_thread") {
+      return undefined;
+    }
+    if (selectedTemplate) {
+      return resolveEmailPurposeFromTemplate(selectedTemplate);
+    }
+    if (purposeMode === "existing") {
+      return resolveEmailPurposeFromValue(requestedTemplateType);
+    }
+    return undefined;
+  }, [mode, purposeMode, requestedTemplateType, selectedTemplate]);
+
+  const templateForRuntimeFields = useMemo(() => {
+    if (selectedTemplate) {
+      return selectedTemplate;
+    }
+    if (mode === "reply_thread") {
+      return null;
+    }
+    if (!requestedTypeForRequest) {
+      return null;
+    }
+    return templates.find((item) => item.type === requestedTypeForRequest) ?? null;
+  }, [mode, requestedTypeForRequest, selectedTemplate, templates]);
+
   useEffect(() => {
     if (
       selectedTemplateIndex !== undefined &&
@@ -478,19 +681,51 @@ export function SmartComposerPage() {
   }, [availableTemplatesForSelection, selectedTemplateIndex]);
 
   const runtimeFieldCount = Object.keys(compactRuntimeFields(runtimeFields)).length;
+  const hasGeneratedThreadContext = Boolean(
+    result?.kind === "thread" &&
+      (result.data.analysis.latest_message.trim() || result.data.analysis.thread_summary.trim())
+  );
+  const missingRuntimeFieldKeys = useMemo(
+    () => (result ? normalizeFieldKeyList(resultMissingRuntimeFields(result)) : []),
+    [result]
+  );
   const suggestedRuntimeKeys = useMemo(() => {
-    if (selectedTemplate?.placeholders.length) {
-      const baseKeys = mode === "reply_thread" ? EMAIL_THREAD_RUNTIME_FIELD_KEYS : [];
-      return Array.from(new Set([...baseKeys, ...selectedTemplate.placeholders]));
-    }
     if (mode === "reply_thread") {
-      return EMAIL_THREAD_RUNTIME_FIELD_KEYS;
+      const purposeKeys = selectedEmailPurpose
+        ? EMAIL_REPLY_PURPOSE_FIELD_KEYS[selectedEmailPurpose] ?? EMAIL_REPLY_PURPOSE_FIELD_KEYS.general_inquiry
+        : [];
+      const templateKeys = selectedTemplate?.placeholders ?? [];
+      return Array.from(new Set([...purposeKeys, ...templateKeys, ...missingRuntimeFieldKeys]));
+    }
+    if (templateForRuntimeFields?.placeholders.length) {
+      return Array.from(new Set([...templateForRuntimeFields.placeholders, ...missingRuntimeFieldKeys]));
     }
     if (requestedTypeForRequest === "denial_letter") {
-      return DENIAL_RUNTIME_FIELD_KEYS;
+      return Array.from(new Set([...DENIAL_RUNTIME_FIELD_KEYS, ...missingRuntimeFieldKeys]));
     }
-    return [];
-  }, [mode, requestedTypeForRequest, selectedTemplate]);
+    return missingRuntimeFieldKeys;
+  }, [missingRuntimeFieldKeys, mode, requestedTypeForRequest, selectedEmailPurpose, selectedTemplate, templateForRuntimeFields]);
+
+  useEffect(() => {
+    if (missingRuntimeFieldKeys.length === 0) {
+      return;
+    }
+    setRuntimeFields((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const key of missingRuntimeFieldKeys) {
+        if (!(key in next)) {
+          next[key] = "";
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+    setNotice({
+      type: "info",
+      message: "Some required details are missing. The fields were added below; fill them in and regenerate the draft.",
+    });
+  }, [missingRuntimeFieldKeys]);
 
   const canGenerate =
     !loading &&
@@ -502,7 +737,7 @@ export function SmartComposerPage() {
           runtimeFieldCount > 0 ||
           Boolean(requestedTypeForRequest)
         )
-      : Boolean(threadText.trim()) || files.length > 0);
+      : Boolean(threadText.trim()) || files.length > 0 || (runtimeFieldCount > 0 && hasGeneratedThreadContext));
 
   const canSaveTemplate = Boolean(editableDraft.trim() && saveAsTemplateName.trim() && !savingTemplate);
   const uploadStepDone = mode === "reply_thread" ? Boolean(threadText.trim() || files.length > 0) : true;
@@ -567,6 +802,11 @@ export function SmartComposerPage() {
     setThreadText("");
     setRuntimeFields({});
     setSelectedTemplateIndex(undefined);
+    if (nextMode === "reply_thread") {
+      setPurposeMode("auto");
+      setRequestedTemplateType("");
+      setCustomTemplateType("");
+    }
   }
 
   function onFilesChange(nextFiles: FileList | null) {
@@ -583,7 +823,7 @@ export function SmartComposerPage() {
 
   async function onGenerate() {
     setNotice(null);
-    setResult(null);
+    const previousResult = result;
 
     if (!canGenerate) {
       setNotice({
@@ -600,7 +840,14 @@ export function SmartComposerPage() {
     const parsedRuntimeFields: Record<string, unknown> | undefined = hasRuntimeFields(compactFields)
       ? compactFields
       : undefined;
+    const threadTextForRequest =
+      threadText.trim() ||
+      (previousResult?.kind === "thread"
+        ? previousResult.data.analysis.latest_message.trim() || previousResult.data.analysis.thread_summary.trim()
+        : "");
 
+    clearTask("smart_composer_generate");
+    setResult(null);
     setLoading(true);
     try {
       const outcome = await runTask<ComposerTaskOutcome>("smart_composer_generate", async () => {
@@ -619,8 +866,9 @@ export function SmartComposerPage() {
         }
 
         const response = await api.generateEmailThread({
-          thread_text: threadText,
+          thread_text: threadTextForRequest,
           files,
+          requested_intent: selectedEmailPurpose,
           selected_template_index: selectedTemplateIndex,
           runtime_fields: parsedRuntimeFields,
           model_name: isAdmin ? modelName || undefined : undefined,
@@ -779,7 +1027,7 @@ export function SmartComposerPage() {
                 </p>
               ) : (
                 <label>
-                  Model (admin override)
+                  Temporary model override
                   <select value={modelName} onChange={(event) => setModelName(event.target.value)}>
                     {models.map((model) => (
                       <option key={model} value={model}>
@@ -812,7 +1060,10 @@ export function SmartComposerPage() {
                   type="radio"
                   name="purpose-mode"
                   checked={purposeMode === "existing"}
-                  onChange={() => setPurposeMode("existing")}
+                  onChange={() => {
+                    setPurposeMode("existing");
+                    setRequestedTemplateType((current) => current || templateTypes[0] || "");
+                  }}
                 />
                 Choose a saved purpose type
               </label>
@@ -823,6 +1074,7 @@ export function SmartComposerPage() {
                     value={requestedTemplateType}
                     onChange={(event) => setRequestedTemplateType(event.target.value)}
                   >
+                    <option value="">Select purpose type</option>
                     {templateTypes.map((typeName) => (
                       <option key={typeName} value={typeName}>
                         {typeName}
@@ -852,9 +1104,46 @@ export function SmartComposerPage() {
               ) : null}
             </>
           ) : (
-            <p className="helper">
-              For thread replies, intent is detected automatically from thread text and uploads.
-            </p>
+            <>
+              <label className="checkbox-inline">
+                <input
+                  type="radio"
+                  name="email-purpose-mode"
+                  checked={purposeMode === "auto"}
+                  onChange={() => setPurposeMode("auto")}
+                />
+                Detect email purpose from the thread
+              </label>
+              <label className="checkbox-inline">
+                <input
+                  type="radio"
+                  name="email-purpose-mode"
+                  checked={purposeMode === "existing"}
+                  onChange={() => setPurposeMode("existing")}
+                />
+                Choose the email purpose
+              </label>
+              {purposeMode === "existing" ? (
+                <label>
+                  Email purpose
+                  <select
+                    value={requestedTemplateType}
+                    onChange={(event) => setRequestedTemplateType(event.target.value)}
+                  >
+                    <option value="">Select a purpose</option>
+                    {EMAIL_REPLY_PURPOSE_OPTIONS.map((purpose) => (
+                      <option key={purpose} value={purpose}>
+                        {labelFromPurpose(purpose)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <p className="helper">
+                The selected purpose customizes the fields below and keeps the reply focused. If unsure, leave this on
+                auto-detect.
+              </p>
+            </>
           )}
 
             <label>
@@ -882,6 +1171,8 @@ export function SmartComposerPage() {
             values={runtimeFields}
             onChange={setRuntimeFields}
             suggestedKeys={suggestedRuntimeKeys}
+            requiredKeys={missingRuntimeFieldKeys}
+            requiredLabel="Added for regenerate"
             title={
               mode === "reply_thread"
                 ? "Email reply details"
@@ -891,10 +1182,10 @@ export function SmartComposerPage() {
             }
             helperText={
               mode === "reply_thread"
-                ? "Fill any known details that should be used in the reply. Blank fields will be requested from the sender instead of guessed."
+                ? "Optional before the first generation. If details are missing afterward, the app will add only the fields needed for this email purpose."
                 : requestedTypeForRequest === "denial_letter"
-                ? "Fill every known claim detail. Blank fields are intentionally rendered as Not provided."
-                : "Add any details you already know to personalize the draft."
+                ? "Optional before the first generation. Fill known claim details if you already have them."
+                : "Optional before the first generation. The selected template controls which fields appear here."
             }
           />
           {selectedTemplate?.placeholders.length ? (
@@ -920,9 +1211,15 @@ export function SmartComposerPage() {
             <strong>Files:</strong> {files.length}
           </p>
           {mode === "reply_thread" ? (
-            <p>
-              <strong>Thread text:</strong> {threadText.trim() ? "Pasted" : "No pasted text"}
-            </p>
+            <>
+              <p>
+                <strong>Email purpose:</strong>{" "}
+                {selectedEmailPurpose ? labelFromPurpose(selectedEmailPurpose) : "auto-detect from thread"}
+              </p>
+              <p>
+                <strong>Thread text:</strong> {threadText.trim() ? "Pasted" : "No pasted text"}
+              </p>
+            </>
           ) : showPurposeStep ? (
             <p>
               <strong>Purpose:</strong> {requestedTypeForRequest ?? "auto-detect"}
@@ -936,7 +1233,7 @@ export function SmartComposerPage() {
             <strong>Runtime fields:</strong> {runtimeFieldCount}
           </p>
           <button className="primary-btn" type="button" onClick={() => void onGenerate()} disabled={!canGenerate}>
-            {loading ? "Generating draft..." : "Generate draft"}
+            {loading ? "Generating draft..." : result ? "Regenerate draft" : "Generate draft"}
           </button>
           {!canGenerate ? <p className="helper">{generationGuidance}</p> : null}
           {loading ? (
@@ -991,10 +1288,10 @@ export function SmartComposerPage() {
                 namePlaceholder="Name this template"
               />
 
-              {resultMissingRuntimeFields(result).length > 0 ? (
+              {missingRuntimeFieldKeys.length > 0 ? (
                 <Notice
                   type="info"
-                  message={`Missing runtime fields: ${resultMissingRuntimeFields(result).join(", ")}`}
+                  message={`Fill these added fields and regenerate: ${missingRuntimeFieldKeys.join(", ")}`}
                 />
               ) : null}
 

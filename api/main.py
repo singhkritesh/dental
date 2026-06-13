@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any
@@ -80,6 +81,7 @@ from services.email_thread import (
 )
 from services.errors import AppError
 from services.field_dictionary_store import FieldDictionaryStore
+from services.email_guardrails import normalize_purpose_label
 from services.generation import (
     generate_denial_letter,
     generate_email_draft,
@@ -103,6 +105,33 @@ from services.upload_store import UploadStore
 
 
 settings = load_settings()
+EMAIL_THREAD_ALLOWED_INTENTS = {
+    "appointment_confirmation",
+    "insurance_update",
+    "billing_inquiry",
+    "records_request",
+    "post_treatment_followup",
+    "denial_followup",
+    "general_inquiry",
+}
+EMAIL_THREAD_INTENT_ALIASES = {
+    "email": "general_inquiry",
+    "email_drafting": "general_inquiry",
+    "general_inquiry_response": "general_inquiry",
+    "new_patient_welcome": "general_inquiry",
+    "appointment_reminder": "appointment_confirmation",
+    "appointment_confirmation_sms": "appointment_confirmation",
+    "appointment_reminder_sms": "appointment_confirmation",
+    "cancellation_confirmation": "appointment_confirmation",
+    "insurance_update_request": "insurance_update",
+    "insurance_verification": "insurance_update",
+    "balance_due": "billing_inquiry",
+    "balance_due_notice": "billing_inquiry",
+    "referral_letter": "records_request",
+    "post_treatment_follow_up": "post_treatment_followup",
+    "denial_letter": "denial_followup",
+    "rebuttal_letter": "denial_followup",
+}
 ollama_client = OllamaClient(
     settings.ollama_url,
     settings.model_name,
@@ -474,6 +503,18 @@ def _merge_extracted_runtime_values(
     return merged
 
 
+def _normalize_requested_email_intent(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    normalized = normalize_purpose_label(raw)
+    if not normalized:
+        return None
+    normalized = EMAIL_THREAD_INTENT_ALIASES.get(normalized, normalized)
+    if normalized not in EMAIL_THREAD_ALLOWED_INTENTS:
+        return None
+    return normalized
+
+
 def _resolve_dentrix_spec_path() -> Path:
     primary = settings.root_dir / "docs" / "DENTRIX_FIELD_MAPPING_SPEC.json"
     if primary.exists():
@@ -759,11 +800,13 @@ def register_routes(app: FastAPI) -> None:
         current_user: AuthUser = Depends(require_current_user),
         thread_text: str | None = Form(default=None),
         files: list[UploadFile] | None = File(default=None),
+        requested_intent: str | None = Form(default=None),
         selected_template_index: int | None = Form(default=None),
         model_name: str | None = Form(default=None),
         runtime_fields: str | None = Form(default=None),
     ) -> EmailThreadGenerateResponse:
         selected_model = _resolve_model_for_use_case("email_thread", model_name)
+        normalized_requested_intent = _normalize_requested_email_intent(requested_intent)
         runtime_values = _prepare_runtime_values(runtime_fields)
         uploaded_files = files or []
         if len(uploaded_files) > 3:
@@ -831,6 +874,16 @@ def register_routes(app: FastAPI) -> None:
             runtime_fields=runtime_values,
             images=images,
         )
+        if normalized_requested_intent:
+            analysis = replace(
+                analysis,
+                intent=normalized_requested_intent,
+                confidence=max(analysis.confidence, 0.8),
+                recommended_action=(
+                    f"Draft a {normalized_requested_intent.replace('_', ' ')} reply "
+                    "for staff review using only provided thread and runtime details."
+                ),
+            )
         runtime_values = _merge_extracted_runtime_values(
             runtime_values,
             analysis.extracted_entities,
@@ -875,12 +928,17 @@ def register_routes(app: FastAPI) -> None:
             rendered_template = render_template_with_runtime_fields(
                 style_template,
                 runtime_values,
-                keep_unresolved=True,
+                keep_unresolved=False,
             )
             style_template = rendered_template.rendered
             template_placeholders = rendered_template.placeholders
             missing_runtime_fields = rendered_template.missing
             runtime_fields_used = rendered_template.used
+            if missing_runtime_fields:
+                analysis = replace(
+                    analysis,
+                    missing_fields=sorted(set(analysis.missing_fields) | set(missing_runtime_fields)),
+                )
 
         draft = generate_email_thread_reply(
             prompts_dir=settings.prompts_dir,
@@ -927,6 +985,7 @@ def register_routes(app: FastAPI) -> None:
             details={
                 "files": len(prepared),
                 "intent": analysis.intent,
+                "requested_intent": normalized_requested_intent,
                 "model": selected_model,
                 "selected_template_index": resolved_template_index,
                 "runtime_fields_keys": sorted(runtime_values.keys()),

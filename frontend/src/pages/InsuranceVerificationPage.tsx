@@ -3,9 +3,11 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { Notice } from "../components/Notice";
 import { OutputActions } from "../components/OutputActions";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { resolveErrorMessage } from "../lib/errorMessages";
 import { verificationSummaryToText } from "../lib/formatters";
 import { useGenerationTasks } from "../lib/generationTasks";
+import { isAdminContext } from "../lib/permissions";
 import type { InsuranceVerificationSummary } from "../lib/types";
 
 const PLAN_TYPES = ["PPO", "HMO", "DHMO", "Indemnity", "Other"];
@@ -33,6 +35,8 @@ function defaultDob(): string {
 const INSURANCE_STATE_STORAGE_KEY = "siligent_insurance_state_v1";
 
 export function InsuranceVerificationPage() {
+  const { user, bootstrap } = useAuth();
+  const isAdmin = isAdminContext(user, bootstrap);
   const { tasks, runTask, getInFlight, clearTask } = useGenerationTasks();
   const [payers, setPayers] = useState<string[]>([]);
   const [models, setModels] = useState<string[]>([]);
@@ -195,7 +199,7 @@ export function InsuranceVerificationPage() {
       const response = await runTask("insurance_verification_generate", () =>
         api.generateInsuranceVerification({
           ...form,
-          model_name: modelName || undefined
+          model_name: isAdmin ? modelName || undefined : undefined
         })
       );
       setSummary(response.summary);
@@ -274,21 +278,27 @@ export function InsuranceVerificationPage() {
 
           <details>
             <summary>Model options</summary>
-            <label>
-              Model
-              <select
-                value={modelName}
-                onChange={(event) => setModelName(event.target.value)}
-                disabled={models.length === 0}
-              >
-                {models.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-              {models.length === 0 ? <p className="helper">No local models detected.</p> : null}
-            </label>
+            {!isAdmin ? (
+              <p className="helper">
+                Model selection is managed by admins. This run uses the insurance verification default.
+              </p>
+            ) : (
+              <label>
+                Temporary model override
+                <select
+                  value={modelName}
+                  onChange={(event) => setModelName(event.target.value)}
+                  disabled={models.length === 0}
+                >
+                  {models.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+                {models.length === 0 ? <p className="helper">No local models detected.</p> : null}
+              </label>
+            )}
           </details>
 
           <label>
